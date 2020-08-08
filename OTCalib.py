@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
 
 
 import numpy as np
@@ -98,7 +97,6 @@ def test(n):
 test(int(1e6))
 
 
-# In[2]:
 
 
 import torch.nn as nn
@@ -122,7 +120,8 @@ def sequential(xs):
 
 
 def fullyConnected(nl, n0, nmid, nf, act):
-  return     nn.Sequential(
+  return \
+    nn.Sequential(
         nn.Linear(n0, nmid)
       , act(inplace=True)
       , sequential([layer(nmid, nmid, act) for i in range(nl)])
@@ -135,28 +134,26 @@ def tloss(xs):
 
 
 
-# In[3]:
 
 
-def save():
+def save(path):
   torch.save(
       { 'transport_state_dict' : transport.state_dict()
       , 'adversary_state_dict' : adversary.state_dict()
       , 'toptim_state_dict' : toptim.state_dict()
       , 'aoptim_state_dict' : aoptim.state_dict()
       }
-    , "./OTCalib.gaus.pth"
+    , path
   )
 
-def load():
-  checkpoint = torch.load("./OTCalib.gaus.pth")
+def load(path):
+  checkpoint = torch.load(path)
   transport.load_state_dict(checkpoint["transport_state_dict"])
   adversary.load_state_dict(checkpoint["adversary_state_dict"])
   toptim.load_state_dict(checkpoint["toptim_state_dict"])
   aoptim.load_state_dict(checkpoint["aoptim_state_dict"])
 
 
-# In[4]:
 
 
 from torch.nn.functional import binary_cross_entropy_with_logits
@@ -167,7 +164,7 @@ def tonp(xs):
   return xs.cpu().detach().numpy()
 
 
-def plotPtTheta(pt, toys, writer, label, epoch):
+def plotPtTheta(pt, toys, nps, writer, label, epoch):
   logpt = log(pt)
 
   zeros = torch.zeros((toys.size()[0], nps), device=device)
@@ -185,6 +182,7 @@ def plotPtTheta(pt, toys, writer, label, epoch):
   negtrans = []
   pos = []
   neg = []
+
   for i in range(nps):
     thetas = zeros.clone()
     thetas[:,i] = 1
@@ -208,7 +206,9 @@ def plotPtTheta(pt, toys, writer, label, epoch):
   rangex = (0, 5)
   rangey = (-1, 1)
 
-  h, b, _ = plt.hist(         [mc[:,0], nom[:,0], data[:,0]]
+  h, b, _ = \
+    plt.hist(
+        [mc[:,0], nom[:,0], data[:,0]]
       , bins=25
       , range=rangex
       , density=True
@@ -223,15 +223,17 @@ def plotPtTheta(pt, toys, writer, label, epoch):
   plt.close()
     
     
-  cols = ["blue", "green", "red", "orange", "magenta"]
+  cols = ["red", "green", "red", "orange", "magenta", "blue"]
 
-  hpos, _, _ = plt.hist(         pos
+  hpos, _, _ = plt.hist(
+        pos
       , bins=b
       , range=rangex
       , density=True
       )
   
-  hneg, _, _ = plt.hist(         neg
+  hneg, _, _ = plt.hist(
+        neg
       , bins=b
       , range=rangex
       , density=True
@@ -240,21 +242,49 @@ def plotPtTheta(pt, toys, writer, label, epoch):
 
   fig = plt.figure(figsize=(6, 6))
 
-  for (i, hvar) in enumerate(hpos):
-    _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
-        , hvar - h[2]
+
+  # numpy is a total pile of crap.
+  # if the number of nps is one, then e.g. "hpos" is a list of bin
+  # counts
+  # if the number of nps is anything else, then e.g. "hpos" is a list
+  # of list of bin counts.
+
+
+  if nps == 1:
+    _ = \
+      plt.plot(
+          (b[:-1] + b[1:]) / 2.0
+        , hpos - h[2]
+        , linewidth=1
+        , color=cols[i]
+        , linestyle='dashed'
+        )
+
+    _ = \
+      plt.plot(
+          (b[:-1] + b[1:]) / 2.0
+        , hneg - h[2]
         , linewidth=1
         , color=cols[i]
         , linestyle='dashed'
         )
     
-  for (i, hvar) in enumerate(hneg):
-    _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
-        , hvar - h[2]
-        , linewidth=1
-        , color=cols[i]
-        , linestyle='dashed'
-        )
+  else:
+      for (i, hvar) in enumerate(hpos):
+        _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
+            , hvar - h[2]
+            , linewidth=1
+            , color=cols[i]
+            , linestyle='dashed'
+            )
+    
+      for (i, hvar) in enumerate(hneg):
+        _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
+            , hvar - h[2]
+            , linewidth=1
+            , color=cols[i]
+            , linestyle='dashed'
+            )
     
 
   _ = plt.plot(         (b[:-1] + b[1:]) / 2.0
@@ -284,21 +314,25 @@ def plotPtTheta(pt, toys, writer, label, epoch):
 
   fig = plt.figure(figsize=(6, 6))
   
-  for i in range(nps):
-    _ =       plt.plot(
+  for (i, ys) in enumerate(postrans):
+    _ = \
+      plt.plot(
           mc[:,0]
-        , postrans[i]
+        , ys
         , c=cols[i]
       )
 
-    _ =       plt.plot(
+  for (i, ys) in enumerate(negtrans):
+    _ = \
+      plt.plot(
           mc[:,0]
-        , negtrans[i]
+        , ys
         , c=cols[i]
       )
 
 
-  _ =     plt.plot(
+  _ =  \
+    plt.plot(
         mc[:,0]
       , nomtrans
       , c="black"
@@ -324,19 +358,16 @@ def plotPtTheta(pt, toys, writer, label, epoch):
 
 def trans(mc, thetas):
     tmp = transport(mc)
-    cv = tmp[:,0].unsqueeze(1)
-    coeffs = tmp[:,1:]
-    
+    cv = tmp[:,0:1]
+    var = tmp[:,1:]
+    coeffs = var - cv
+
     corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
     
-    # TODO
-    # would this be easier to learn if it were
-    # (1 - sum(thetas)) * cv + corr?
     return cv + corr.squeeze(2)
     
 
 
-# In[ ]:
 
 
 from itertools import product
@@ -346,7 +377,7 @@ nval = 2**15
 valtoys = torch.rand(nval, device=device)
 
 
-nepochs = 400
+nepochs = 200
 datasize = 2**18
 
 alldata = genData(datasize)
@@ -354,8 +385,8 @@ allmc = genMC(datasize)
 
 
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
-bss = [2**n for n in [10, 12, 8]]
-npss = [5]
+bss = [2**n for n in [8]]
+npss = [1]
 nlayer = [4]
 latent = [256]
 lrs = [(5e-5, 10**l) for l in [-6.5, -6, -5.5]]
@@ -377,7 +408,9 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr))   in product
     toptim = torch.optim.Adam(transport.parameters(), lr=tlr)
     aoptim = torch.optim.Adam(adversary.parameters(), lr=alr)
 
-    writer = SummaryWriter("runs/scan5_%s_%d_%d_%d_%d_%0.2e" % (actname, batchsize, nps, nlay, nlat, tlr))
+    name = "scan5_%s_%d_%d_%d_%d_%0.2e" % (actname, batchsize, nps, nlay, nlat, tlr)
+
+    writer = SummaryWriter("runs/" + name)
 
 
     for epoch in range(nepochs):
@@ -488,10 +521,12 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr))   in product
 
 
       # make validation plots once per epoch
-      plotPtTheta(25, valtoys, writer, "pt25", epoch)
+      plotPtTheta(25, valtoys, nps, writer, "pt25", epoch)
 
-      plotPtTheta(100, valtoys, writer, "pt100", epoch)
+      plotPtTheta(100, valtoys, nps, writer, "pt100", epoch)
 
-      plotPtTheta(500, valtoys, writer, "pt500", epoch)
+      plotPtTheta(500, valtoys, nps, writer, "pt500", epoch)
     
-      plotPtTheta(1000, valtoys, writer, "pt1000", epoch)
+      plotPtTheta(1000, valtoys, nps, writer, "pt1000", epoch)
+
+      save(name + ".pth")
