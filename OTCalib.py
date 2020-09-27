@@ -28,13 +28,13 @@ from itertools import product
 from otcalibutils import *
 
 nbatches = 2**10
-nepochs = 100
+nepochs = 200
 
 
-decays = [0.99]
+decays = [0.98]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
 bss = [64]
-npss = [1, 4]
+npss = [4, 1]
 nlayer = [4]
 latent = [64]
 lrs = [(0.5, 5e-2)]

@@ -262,7 +262,7 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
     hdown = hneg[i]
 
     (xs, ys) = histcurve(b, hup, 0)
-    plt.plot(xs, ys, linewidth=1, color=cols[i], alpha=0.5)
+    plt.plot(xs, ys, linewidth=1, color=cols[i], alpha=0.5, label="$\\theta_%d$ variation" % i)
 
     (xs, ys) = histcurve(b, hdown, 0)
     plt.plot(xs, ys, linewidth=1, color=cols[i], alpha=0.5)
@@ -309,7 +309,7 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
 
   fig = plt.figure(figsize=(6, 6))
 
-  plt.plot(rangex[0], 1, rangex[1], 1, color='black', linewidth=1, alpha=0.5)
+  plt.plot((rangex[0], rangex[1]), (1, 1), color='black', linewidth=1, alpha=0.5)
 
 
   for i in range(len(hpos)):
@@ -360,7 +360,7 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
 
   fig = plt.figure(figsize=(6, 6))
 
-  plt.plot(rangex[0], 0, rangex[1], 0, color='black', linewidth=1, alpha=0.5)
+  plt.plot((rangex[0], rangex[1]), (0, 0), color='black', linewidth=1, alpha=0.5)
 
   for (i, ys) in enumerate(postrans):
     _ = \
