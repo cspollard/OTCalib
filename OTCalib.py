@@ -31,10 +31,10 @@ nbatches = 2**10
 nepochs = 100
 
 
-decays = [0.97]
+decays = [0.99]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
 bss = [64]
-npss = [1]
+npss = [1, 4]
 nlayer = [4]
 latent = [64]
 lrs = [(0.5, 5e-2)]
