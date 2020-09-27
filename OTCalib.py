@@ -2,6 +2,11 @@
 # coding: utf-8
 
 
+outprefix = 'test/'
+device='cuda'
+
+# TODO
+# I don't know how many of these imports are strictly necessary.
 
 import numpy as np
 import matplotlib    
@@ -10,391 +15,45 @@ import matplotlib.pyplot as plt
 import torch
 from math import e
 
-device='cuda'
-
-
-def poly(cs, xs):
-  ys = torch.zeros_like(xs)
-  for (i, c) in enumerate(cs):
-    ys += c * xs**i
-
-  return ys
-
-
-def discMC(xs, logpts):
-  return poly([0, 0.6, 1.2, 1.1], xs) * poly([1, 0.1, -0.01], logpts)
-
-def discData(xs, logpts):
-  return poly([0, 0.7, 1.1, 1.3], xs) * poly([1, -0.1, 0.02], logpts)
-
-
-def logptMC(xs):
-  return torch.log(poly([25, 100, 7], -torch.log(xs)))
-
-def logptData(xs):
-  return torch.log(poly([25, 120, 5], -torch.log(xs)))
-
-
-
-# need to add a small number to avoid values of zero.
-def genMC(n):
-  xs = torch.rand(n, device=device) + 1e-5
-  logpts = logptMC(xs)
-  ys = torch.rand(n, device=device) + 1e-5
-  ds = discMC(ys, logpts)
-  return torch.stack([ds, logpts]).transpose(0, 1)
-
-def genData(n):
-  xs = torch.rand(n, device=device) + 1e-5
-  logpts = logptData(xs)
-  ys = torch.rand(n, device=device) + 1e-5
-  ds = discData(ys, logpts)
-  return torch.stack([ds, logpts]).transpose(0, 1)
-
-
-
-# give high-pT jets more weight to improve convergence
-# similar idea to boosting
-def ptWeight(logpts):
-    pts = torch.exp(logpts)
-    w = torch.exp(pts / e**5.5)
-    return w / torch.mean(w)
-
-
-
-
-def test(n):
-  mc = genMC(n).cpu().numpy()
-  data = genData(n).cpu().numpy()
-    
-  mcw = ptWeight(torch.tensor(mc[:,1])).numpy()
-  dataw = ptWeight(torch.tensor(data[:,1])).numpy()
-
-
-  plt.figure(figsize=(30, 10))
-
-  plt.subplot(1, 3, 1)
-
-  _ = plt.hist([np.exp(mc[:,1]), np.exp(data[:,1])], bins=25, label=["mc", "data"], weights=[mcw, dataw])
-  plt.title("pT")
-  plt.yscale("log")
-  plt.legend()
-
-  plt.subplot(1, 3, 2)
-
-
-  _ = plt.hist([mc[:,1], data[:,1]], bins=25, label=["mc", "data"])
-  plt.title("log pT")
-  plt.legend()
-
-  plt.subplot(1, 3, 3)
-
-  _ = plt.hist([mc[:,0], data[:,0]], bins=25, label=["mc", "data"])
-  plt.title("discriminant")
-  plt.legend()
-  plt.show()
-
-test(int(1e6))
-
-
-
 
 import torch.nn as nn
 from collections import OrderedDict
-
-
-
-def layer(n, m, act):
-  return     nn.Sequential(
-        nn.Linear(n, m)
-      , act(inplace=True)
-    )
-
-
-def sequential(xs):
-    d = OrderedDict()
-    for (i, x) in enumerate(xs):
-        d[str(i)] = x
-        
-    return nn.Sequential(d)
-
-
-def fullyConnected(nl, n0, nmid, nf, act):
-  return \
-    nn.Sequential(
-        nn.Linear(n0, nmid)
-      , act(inplace=True)
-      , sequential([layer(nmid, nmid, act) for i in range(nl)])
-      , nn.Linear(nmid, nf)
-      )
-
-
-def tloss(xs):
-  return torch.mean(xs**2)
-
-
-
-
-
-def save(path):
-  torch.save(
-      { 'transport_state_dict' : transport.state_dict()
-      , 'adversary_state_dict' : adversary.state_dict()
-      , 'toptim_state_dict' : toptim.state_dict()
-      , 'aoptim_state_dict' : aoptim.state_dict()
-      }
-    , path
-  )
-
-def load(path):
-  checkpoint = torch.load(path)
-  transport.load_state_dict(checkpoint["transport_state_dict"])
-  adversary.load_state_dict(checkpoint["adversary_state_dict"])
-  toptim.load_state_dict(checkpoint["toptim_state_dict"])
-  aoptim.load_state_dict(checkpoint["aoptim_state_dict"])
-
-
-
 
 from torch.nn.functional import binary_cross_entropy_with_logits
 from torch.utils.tensorboard import SummaryWriter
 from math import log, exp
 
-def tonp(xs):
-  return xs.cpu().detach().numpy()
-
-
-def plotPtTheta(pt, toys, nps, writer, label, epoch):
-  logpt = log(pt)
-
-  zeros = torch.zeros((toys.size()[0], nps), device=device)
-  logpts = torch.ones(toys.size()[0], device=device)*logpt
-
-  data = torch.stack([torch.sort(discData(toys, logpts))[0], logpts]).transpose(0, 1)
-  mc = torch.stack([torch.sort(discMC(toys, logpts))[0], logpts]).transpose(0, 1)
-
-  thetas = zeros.clone()
-  transporting = trans(mc, thetas)
-  nomtrans = tonp(transporting)
-  nom = tonp(transporting + mc[:,0:1])
-
-  postrans = []
-  negtrans = []
-  pos = []
-  neg = []
-
-  for i in range(nps):
-    thetas = zeros.clone()
-    thetas[:,i] = 1
-    transporting = trans(mc, thetas)
-    postrans.append(tonp(transporting))
-    pos.append(tonp(transporting + mc[:,0:1])[:,0])
-
-    thetas = zeros.clone()
-    thetas[:,i] = -1
-    transporting = trans(mc, thetas)
-    negtrans.append(tonp(transporting))
-    neg.append(tonp(transporting + mc[:,0:1])[:,0])
-
-
-
-  data = tonp(data)
-  mc = tonp(mc)
-
-  fig = plt.figure(figsize=(6, 6))
-
-  rangex = (0, 5)
-  rangey = (-1, 1)
-
-  h, b, _ = \
-    plt.hist(
-        [mc[:,0], nom[:,0], data[:,0]]
-      , bins=25
-      , range=rangex
-      , density=True
-      , label=["mc", "nominal transported", "data"]
-      )
-  
-  plt.title("discriminant distribution, (pT = %0.2f)" % exp(logpt))
-  plt.xlabel("discriminant")
-  plt.legend()
-    
-  writer.add_figure("%shist" % label, fig, global_step=epoch)
-  plt.close()
-    
-    
-  cols = ["red", "green", "red", "orange", "magenta", "blue"]
-
-  hpos, _, _ = plt.hist(
-        pos
-      , bins=b
-      , range=rangex
-      , density=True
-      )
-  
-  hneg, _, _ = plt.hist(
-        neg
-      , bins=b
-      , range=rangex
-      , density=True
-      )
-  
-
-  fig = plt.figure(figsize=(6, 6))
-
-
-  # numpy is a total pile of crap.
-  # if the number of nps is one, then e.g. "hpos" is a list of bin
-  # counts
-  # if the number of nps is anything else, then e.g. "hpos" is a list
-  # of list of bin counts.
-
-
-  if nps == 1:
-    _ = \
-      plt.plot(
-          (b[:-1] + b[1:]) / 2.0
-        , hpos - h[2]
-        , linewidth=1
-        , color=cols[i]
-        , linestyle='dashed'
-        )
-
-    _ = \
-      plt.plot(
-          (b[:-1] + b[1:]) / 2.0
-        , hneg - h[2]
-        , linewidth=1
-        , color=cols[i]
-        , linestyle='dashed'
-        )
-    
-  else:
-      for (i, hvar) in enumerate(hpos):
-        _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
-            , hvar - h[2]
-            , linewidth=1
-            , color=cols[i]
-            , linestyle='dashed'
-            )
-    
-      for (i, hvar) in enumerate(hneg):
-        _ = plt.plot(           (b[:-1] + b[1:]) / 2.0
-            , hvar - h[2]
-            , linewidth=1
-            , color=cols[i]
-            , linestyle='dashed'
-            )
-    
-
-  _ = plt.plot(         (b[:-1] + b[1:]) / 2.0
-      , h[0] - h[2]
-      , label="mc"
-      , linewidth=3
-      )
-
-  _ = plt.plot(         (b[:-1] + b[1:]) / 2.0
-      , h[1] - h[2]
-      , label="nominal transported"
-      , linewidth=3
-      )
-
-
-
-  plt.ylim(-0.5, 0.5)
-  plt.title("discriminant difference to data, (pT = %0.2f)" % exp(logpt))
-  plt.xlabel("discriminant")
-  plt.ylabel("prediction - data")
-  plt.legend()
-    
-  writer.add_figure("%sdiff" % label, fig, global_step=epoch)
-  plt.close()
-    
-
-
-  fig = plt.figure(figsize=(6, 6))
-  
-  for (i, ys) in enumerate(postrans):
-    _ = \
-      plt.plot(
-          mc[:,0]
-        , ys
-        , c=cols[i]
-      )
-
-  for (i, ys) in enumerate(negtrans):
-    _ = \
-      plt.plot(
-          mc[:,0]
-        , ys
-        , c=cols[i]
-      )
-
-
-  _ =  \
-    plt.plot(
-        mc[:,0]
-      , nomtrans
-      , c="black"
-      , lw=4
-    )
-
-
-  
-  plt.xlim(rangex)
-  plt.ylim(rangey)
-  plt.title("discriminant transport, (pT = %0.2f)" % exp(logpt))
-  plt.xlabel("mc discriminant")
-  plt.ylabel("transport vector")
-    
-
-        
-  writer.add_figure("%strans" % label, fig, global_step=epoch)
-  plt.close()
-    
-  return
-
-
-
-def trans(mc, thetas):
-    tmp = transport(mc)
-    cv = tmp[:,0:1] # central value
-    var = tmp[:,1:] # eigen variations 
-    coeffs = var - cv
-
-    corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
-    
-    return cv + corr.squeeze(2)
-    
-
-
-
-
 from itertools import product
 
+from otcalibutils import *
+
 # toys for validation samples
-nval = 2**15
+nval = 2**12
 valtoys = torch.rand(nval, device=device)
 
 
 nbatches = 2**10
-nepochs = 100
+nepochs = 200
 
 
+decays = [0.95]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
-bss = [2**n for n in [8]]
+bss = [64]
 npss = [1]
-nlayer = [4, 3]
-latent = [1024, 256]
-lrs = [(0.5, 10**l) for l in [-2, -3]]
+nlayer = [4]
+latent = [256]
+lrs = [(1, 1e-1)]
 dss = [int(1e5), int(1e7)]
 
+controlplots(int(1e6))
+plt.savefig("controlplots.pdf")
 
-for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   in product(acts, bss, npss, nlayer, latent, lrs, dss):
+for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize) \
+  in product(decays, acts, bss, npss, nlayer, latent, lrs, dss):
 
 
-    alldata = genData(datasize)
-    allmc = genMC(4*datasize)
+    alldata = genData(datasize, device)
+    allmc = genMC(4*datasize, device)
 
     transport = fullyConnected(nlay, 2, nlat, 1+nps, activation)
 
@@ -407,9 +66,15 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
     toptim = torch.optim.SGD(transport.parameters(), lr=tlr)
     aoptim = torch.optim.SGD(adversary.parameters(), lr=alr)
 
-    name = "scan7_sgd_%s_%d_%d_%d_%d_%0.2e_%d" % (actname, batchsize, nps, nlay, nlat, tlr, datasize)
+    tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, decay)
+    asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, decay)
 
-    writer = SummaryWriter("paper/" + name)
+
+    name = \
+      "sgdexp_%.2f_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
+        % (decay, actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
+
+    writer = SummaryWriter(outprefix + name)
 
 
     for epoch in range(nepochs):
@@ -424,11 +89,9 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
 
       for batch in range(nbatches):
 
-        tmp = alldata[torch.randint(alldata.size()[0], size=(batchsize,), device=device)]
-        data = tmp
+        data = alldata[torch.randint(alldata.size()[0], size=(batchsize,), device=device)]
 
-        tmp = allmc[torch.randint(allmc.size()[0], size=(batchsize,), device=device)]
-        mc = tmp
+        mc = allmc[torch.randint(allmc.size()[0], size=(batchsize,), device=device)]
 
         toptim.zero_grad()
         aoptim.zero_grad()
@@ -441,54 +104,48 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
               real
             , torch.ones_like(real)
             , reduction='mean'
-            , weight=ptWeight(data[:,1:])
             )
 
         radvloss += tmp1.item()
 
 
         # add gradient regularization
-        grad_params = torch.autograd.grad(tmp1, adversary.parameters(), create_graph=True, retain_graph=True)
-        grad_norm = 0
-        for grad in grad_params:
-            grad_norm += grad.pow(2).sum()
-        grad_norm = grad_norm.sqrt()
+        # grad_params = torch.autograd.grad(tmp1, adversary.parameters(), create_graph=True, retain_graph=True)
+        # grad_norm = 0
+        # for grad in grad_params:
+        #     grad_norm += grad.pow(2).sum()
+        # grad_norm = grad_norm.sqrt()
 
 
         thetas = torch.randn((batchsize, nps), device=device)
-        transporting = trans(mc, thetas)
+        transporting = trans(transport, mc, thetas)
 
         transported = transporting + mc[:,0:1]
 
         fake = adversary(torch.cat([transported, mc[:,1:]], axis=1))
 
-
         fakeavg += torch.mean(fake).item()
-
-
 
         tmp2 = \
           binary_cross_entropy_with_logits(
               fake
             , torch.zeros_like(real)
             , reduction='mean'
-            , weight=ptWeight(mc[:,1:])
             )
 
         fadvloss += tmp2.item()
 
-        loss = tmp1 + tmp2 + 0.1*grad_norm
+        loss = tmp1 + tmp2 # + 0.1*grad_norm
 
         loss.backward()
         aoptim.step()
-
 
 
         toptim.zero_grad()
         aoptim.zero_grad()
 
         thetas = torch.randn((batchsize, nps), device=device)
-        transporting = trans(mc, thetas)
+        transporting = trans(transport, mc, thetas)
 
         transported = transporting + mc[:,0:1]
         fake = adversary(torch.cat([transported, mc[:,1:]], axis=1))
@@ -496,11 +153,12 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
         tmp1 = tloss(transporting)
         ttransloss += tmp1.item()
 
-        tmp2 =           binary_cross_entropy_with_logits(               fake
-            , torch.ones_like(real)
-            , reduction='mean'
-            , weight=ptWeight(mc[:,1:])
-            )
+        tmp2 =\
+          binary_cross_entropy_with_logits(
+            fake
+          , torch.ones_like(real)
+          , reduction='mean'
+          )
 
         tadvloss += tmp2.item()
 
@@ -509,6 +167,9 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
         loss.backward()
         toptim.step()
 
+
+      tsched.step()
+      asched.step()
 
       # write tensorboard info once per epoch
       writer.add_scalar('radvloss', radvloss / nbatches, epoch)
@@ -520,12 +181,14 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   
 
 
       # make validation plots once per epoch
-      plotPtTheta(25, valtoys, nps, writer, "pt25", epoch)
+      plotPtTheta(transport, 25, valtoys, nps, writer, "pt25", epoch, device)
 
-      plotPtTheta(100, valtoys, nps, writer, "pt100", epoch)
+      plotPtTheta(transport, 50, valtoys, nps, writer, "pt50", epoch, device)
 
-      plotPtTheta(500, valtoys, nps, writer, "pt500", epoch)
-    
-      plotPtTheta(1000, valtoys, nps, writer, "pt1000", epoch)
+      plotPtTheta(transport, 100, valtoys, nps, writer, "pt100", epoch, device)
 
-      save("paper/" + name + ".pth")
+      plotPtTheta(transport, 250, valtoys, nps, writer, "pt250", epoch, device)
+
+      plotPtTheta(transport, 500, valtoys, nps, writer, "pt500", epoch, device)
+
+      save(outprefix + name + ".pth", transport, adversary, toptim, aoptim)
