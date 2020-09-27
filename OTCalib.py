@@ -358,8 +358,8 @@ def plotPtTheta(pt, toys, nps, writer, label, epoch):
 
 def trans(mc, thetas):
     tmp = transport(mc)
-    cv = tmp[:,0:1]
-    var = tmp[:,1:]
+    cv = tmp[:,0:1] # central value
+    var = tmp[:,1:] # eigen variations 
     coeffs = var - cv
 
     corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
@@ -377,40 +377,39 @@ nval = 2**15
 valtoys = torch.rand(nval, device=device)
 
 
-nepochs = 200
-datasize = 2**18
-
-alldata = genData(datasize)
-allmc = genMC(datasize)
+nbatches = 2**10
+nepochs = 100
 
 
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
 bss = [2**n for n in [8]]
 npss = [1]
-nlayer = [4]
-latent = [256]
-lrs = [(5e-5, 10**l) for l in [-6.5, -6, -5.5]]
+nlayer = [4, 3]
+latent = [1024, 256]
+lrs = [(0.5, 10**l) for l in [-2, -3]]
+dss = [int(1e5), int(1e7)]
 
 
-for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr))   in product(acts, bss, npss, nlayer, latent, lrs):
-    
-    nbatches = datasize // batchsize
+for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize)   in product(acts, bss, npss, nlayer, latent, lrs, dss):
 
-    
+
+    alldata = genData(datasize)
+    allmc = genMC(4*datasize)
+
     transport = fullyConnected(nlay, 2, nlat, 1+nps, activation)
 
-    adversary = fullyConnected(3, 2, 512, 1, nn.LeakyReLU)
+    adversary = fullyConnected(nlay, 2, nlat*2, 1, nn.LeakyReLU)
 
 
     transport.to(device)
     adversary.to(device)
     
-    toptim = torch.optim.Adam(transport.parameters(), lr=tlr)
-    aoptim = torch.optim.Adam(adversary.parameters(), lr=alr)
+    toptim = torch.optim.SGD(transport.parameters(), lr=tlr)
+    aoptim = torch.optim.SGD(adversary.parameters(), lr=alr)
 
-    name = "scan5_%s_%d_%d_%d_%d_%0.2e" % (actname, batchsize, nps, nlay, nlat, tlr)
+    name = "scan7_sgd_%s_%d_%d_%d_%d_%0.2e_%d" % (actname, batchsize, nps, nlay, nlat, tlr, datasize)
 
-    writer = SummaryWriter("runs/" + name)
+    writer = SummaryWriter("paper/" + name)
 
 
     for epoch in range(nepochs):
@@ -529,4 +528,4 @@ for ((actname, activation), batchsize, nps, nlay, nlat, (alr, tlr))   in product
     
       plotPtTheta(1000, valtoys, nps, writer, "pt1000", epoch)
 
-      save(name + ".pth")
+      save("paper/" + name + ".pth")
