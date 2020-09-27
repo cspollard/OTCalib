@@ -27,23 +27,18 @@ from itertools import product
 
 from otcalibutils import *
 
-# toys for validation samples
-nval = 2**12
-valtoys = torch.rand(nval, device=device)
-
-
 nbatches = 2**10
-nepochs = 200
+nepochs = 100
 
 
-decays = [0.95]
+decays = [0.97]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
 bss = [64]
 npss = [1]
-nlayer = [4]
-latent = [256]
-lrs = [(1, 1e-1)]
-dss = [int(1e5), int(1e7)]
+nlayer = [3]
+latent = [64]
+lrs = [(0.5, 5e-2)]
+dss = [int(1e6), int(1e5), int(1e4)]
 
 controlplots(int(1e6))
 plt.savefig("controlplots.pdf")
@@ -181,14 +176,21 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
 
 
       # make validation plots once per epoch
-      plotPtTheta(transport, 25, valtoys, nps, writer, "pt25", epoch, device)
 
-      plotPtTheta(transport, 50, valtoys, nps, writer, "pt50", epoch, device)
+      plotPtTheta(transport, ptbin(25, 50, allmc), ptbin(25, 50, alldata), nps, writer, "pt_25_50", "$25 < p_T < 50$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, 100, valtoys, nps, writer, "pt100", epoch, device)
+      plotPtTheta(transport, ptbin(50, 75, allmc), ptbin(50, 75, alldata), nps, writer, "pt_50_75", "$50 < p_T < 75$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, 250, valtoys, nps, writer, "pt250", epoch, device)
+      plotPtTheta(transport, ptbin(75, 100, allmc), ptbin(75, 100, alldata), nps, writer, "pt_75_100", "$75 < p_T < 100$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, 500, valtoys, nps, writer, "pt500", epoch, device)
+      plotPtTheta(transport, ptbin(100, 150, allmc), ptbin(100, 150, alldata), nps, writer, "pt_100_150", "$100 < p_T < 150$", epoch, device, nmax=250)
+
+      plotPtTheta(transport, ptbin(150, 200, allmc), ptbin(150, 200, alldata), nps, writer, "pt_150_200", "$150 < p_T < 200$", epoch, device, nmax=250)
+
+      plotPtTheta(transport, ptbin(200, 300, allmc), ptbin(200, 300, alldata), nps, writer, "pt_200_300", "$200 < p_T < 300$", epoch, device, nmax=250)
+
+      plotPtTheta(transport, ptbin(300, 500, allmc), ptbin(300, 500, alldata), nps, writer, "pt_300_500", "$300 < p_T < 500$", epoch, device, nmax=250)
+
+      plotPtTheta(transport, ptbin(500, 1000, allmc), ptbin(500, 1000, alldata), nps, writer, "pt_500_1000", "$500 < p_T < 1000$", epoch, device, nmax=250)
 
       save(outprefix + name + ".pth", transport, adversary, toptim, aoptim)
