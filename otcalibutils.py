@@ -58,6 +58,13 @@ def genData(n, device):
   return torch.stack([ds, logpts]).transpose(0, 1)
 
 
+def genMCWithDataPt(n, device):
+  xs = torch.rand(n, device=device) + 1e-5
+  logpts = logptData(xs)
+  ys = torch.rand(n, device=device) + 1e-5
+  ds = discMC(ys, logpts)
+  return torch.stack([ds, logpts]).transpose(0, 1)
+
 # give high-pT jets more weight to improve convergence
 # similar idea to boosting
 def ptWeight(logpts):
@@ -223,6 +230,7 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
   htarg = h[2]
 
 
+
   hpos, _, _ = \
     plt.hist(
       pos
@@ -239,9 +247,6 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
     , density=True
     )
 
-  plt.close()
-
-
   # numpy is a total pile of crap.
   # if the number of nps is one, then e.g. "hpos" is a list of bin
   # counts
@@ -251,6 +256,20 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
   if nps == 1:
     hpos = [hpos]
     hneg = [hneg]
+
+  plt.close()
+
+
+  writer.add_scalar('binnedkldiv_' + label, binnedkldiv(htrans, htarg), epoch)
+
+  for i in range(len(hpos)):
+    hup = hpos[i]
+    hdown = hneg[i]
+
+    writer.add_scalar('binnedkldiv_' + label + "_theta%d_up" % i, binnedkldiv(hup, htarg), epoch)
+    writer.add_scalar('binnedkldiv_' + label + "_theta%d_down" % i, binnedkldiv(hdown, htarg), epoch)
+
+
 
   cols = ["green", "orange", "magenta", "blue"]
 
@@ -429,3 +448,10 @@ def ptbin(low, high, samps):
   cut = torch.logical_and(lowcut, highcut)
 
   return samps[cut]
+
+
+def binnedkldiv(nom, var):
+  valid = np.logical_and(nom != 0, var != 0)
+  nom = nom[valid]
+  var = var[valid]
+  return np.sum(nom * np.log(nom / var))

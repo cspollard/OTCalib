@@ -2,7 +2,7 @@
 # coding: utf-8
 
 
-outprefix = 'test/'
+outprefix = 'paper/'
 device='cuda'
 
 # TODO
@@ -28,17 +28,17 @@ from itertools import product
 from otcalibutils import *
 
 nbatches = 2**10
-nepochs = 200
+nepochs = 100
 
 
-decays = [0.98]
+decays = [0.93]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
-bss = [64]
-npss = [4, 1]
-nlayer = [4]
-latent = [64]
-lrs = [(0.5, 5e-2)]
-dss = [int(1e6), int(1e5), int(1e4)]
+bss = [4096]
+npss = [1]
+nlayer = [2]
+latent = [2048]
+lrs = [(0.1, 0.1)]
+dss = [int(1e6)]
 
 controlplots(int(1e6))
 plt.savefig("controlplots.pdf")
@@ -49,6 +49,7 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
 
     alldata = genData(datasize, device)
     allmc = genMC(4*datasize, device)
+    validmc = genMCWithDataPt(datasize, device)
 
     transport = fullyConnected(nlay, 2, nlat, 1+nps, activation)
 
@@ -66,7 +67,7 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
 
 
     name = \
-      "sgdexp_%.2f_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
+      "trueloss_sgdexp_%.2f_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
         % (decay, actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
 
     writer = SummaryWriter(outprefix + name)
@@ -130,6 +131,8 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
 
         fadvloss += tmp2.item()
 
+        # TODO
+        # is this really the correct loss function?
         loss = tmp1 + tmp2 # + 0.1*grad_norm
 
         loss.backward()
@@ -149,9 +152,9 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
         ttransloss += tmp1.item()
 
         tmp2 =\
-          binary_cross_entropy_with_logits(
+          - binary_cross_entropy_with_logits(
             fake
-          , torch.ones_like(real)
+          , torch.zeros_like(real)
           , reduction='mean'
           )
 
@@ -175,22 +178,25 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
       writer.add_scalar('fakeavg', fakeavg / nbatches, epoch)
 
 
-      # make validation plots once per epoch
+      # make validation plots once per 10 epochs
 
-      plotPtTheta(transport, ptbin(25, 50, allmc), ptbin(25, 50, alldata), nps, writer, "pt_25_50", "$25 < p_T < 50$", epoch, device, nmax=250)
+      if epoch % 1 == 0:
+        print("plotting")
 
-      plotPtTheta(transport, ptbin(50, 75, allmc), ptbin(50, 75, alldata), nps, writer, "pt_50_75", "$50 < p_T < 75$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(25, 50, validmc), ptbin(25, 50, alldata), nps, writer, "pt_25_50", "$25 < p_T < 50$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(75, 100, allmc), ptbin(75, 100, alldata), nps, writer, "pt_75_100", "$75 < p_T < 100$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(50, 75, validmc), ptbin(50, 75, alldata), nps, writer, "pt_50_75", "$50 < p_T < 75$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(100, 150, allmc), ptbin(100, 150, alldata), nps, writer, "pt_100_150", "$100 < p_T < 150$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(75, 100, validmc), ptbin(75, 100, alldata), nps, writer, "pt_75_100", "$75 < p_T < 100$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(150, 200, allmc), ptbin(150, 200, alldata), nps, writer, "pt_150_200", "$150 < p_T < 200$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(100, 150, validmc), ptbin(100, 150, alldata), nps, writer, "pt_100_150", "$100 < p_T < 150$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(200, 300, allmc), ptbin(200, 300, alldata), nps, writer, "pt_200_300", "$200 < p_T < 300$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(150, 200, validmc), ptbin(150, 200, alldata), nps, writer, "pt_150_200", "$150 < p_T < 200$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(300, 500, allmc), ptbin(300, 500, alldata), nps, writer, "pt_300_500", "$300 < p_T < 500$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(200, 300, validmc), ptbin(200, 300, alldata), nps, writer, "pt_200_300", "$200 < p_T < 300$", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(500, 1000, allmc), ptbin(500, 1000, alldata), nps, writer, "pt_500_1000", "$500 < p_T < 1000$", epoch, device, nmax=250)
+        plotPtTheta(transport, ptbin(300, 500, validmc), ptbin(300, 500, alldata), nps, writer, "pt_300_500", "$300 < p_T < 500$", epoch, device, nmax=250)
+
+        plotPtTheta(transport, ptbin(500, 1000, validmc), ptbin(500, 1000, alldata), nps, writer, "pt_500_1000", "$500 < p_T < 1000$", epoch, device, nmax=250)
 
       save(outprefix + name + ".pth", transport, adversary, toptim, aoptim)
