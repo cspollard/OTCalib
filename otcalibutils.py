@@ -35,7 +35,7 @@ def discData(xs, logpts):
 
 
 def logptMC(xs):
-  return torch.log(poly([25, 200, 7], -torch.log(xs)))
+  return torch.log(poly([25, 200, -2], -torch.log(xs)))
 
 def logptData(xs):
   return torch.log(poly([25, 220, 5], -torch.log(xs)))

@@ -28,16 +28,16 @@ from itertools import product
 from otcalibutils import *
 
 nbatches = 2**10
-nepochs = 100
+nepochs = 200
 
 
-decays = [0.93]
+decays = [0.95]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
 bss = [4096]
 npss = [1]
-nlayer = [2]
-latent = [2048]
-lrs = [(0.1, 0.1)]
+nlayer = [5]
+latent = [512]
+lrs = [(x, x) for x in [1e-6]]
 dss = [int(1e6)]
 
 controlplots(int(1e6))
@@ -59,16 +59,16 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
     transport.to(device)
     adversary.to(device)
     
-    toptim = torch.optim.SGD(transport.parameters(), lr=tlr)
-    aoptim = torch.optim.SGD(adversary.parameters(), lr=alr)
+    toptim = torch.optim.RMSprop(transport.parameters(), lr=tlr)
+    aoptim = torch.optim.RMSprop(adversary.parameters(), lr=alr)
 
-    tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, decay)
-    asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, decay)
+    # tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, decay)
+    # asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, decay)
 
 
     name = \
-      "trueloss_sgdexp_%.2f_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
-        % (decay, actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
+      "trueloss_rmsprop_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
+        % (actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
 
     writer = SummaryWriter(outprefix + name)
 
@@ -166,8 +166,8 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
         toptim.step()
 
 
-      tsched.step()
-      asched.step()
+      # tsched.step()
+      # asched.step()
 
       # write tensorboard info once per epoch
       writer.add_scalar('radvloss', radvloss / nbatches, epoch)
