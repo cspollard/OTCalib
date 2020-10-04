@@ -7,7 +7,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import torch
 from math import e
-import otcalibutils
+from scipy.special import lambertw
 
 
 import torch.nn as nn
@@ -84,7 +84,6 @@ def controlplots(n):
   mc = genMC(n, 'cpu').numpy()
   data = genData(n, 'cpu').numpy()
 
-
   plt.figure(figsize=(30, 10))
 
   plt.subplot(1, 3, 1)
@@ -108,7 +107,14 @@ def controlplots(n):
   plt.legend()
   plt.show()
 
+  plt.close()
+
 # test(int(1e6))
+
+def bootstrap(n, device):
+  xs = np.random.rand(n)
+  ws = lambertw((xs-1)/np.e, k=-1).astype(np.float)
+  return - torch.from_numpy(ws).to(device) - 1
 
 
 def layer(n, m, act):
@@ -141,9 +147,10 @@ def tloss(xs):
   return torch.mean(xs**2)
 
 
-def save(path, transport, adversary, toptim, aoptim):
+def save(path, transports, adversary, toptim, aoptim):
   torch.save(
-      { 'transport_state_dict' : transport.state_dict()
+      { 'transport1_state_dict' : transports[0].state_dict()
+      , 'transport2_state_dict' : transports[1].state_dict()
       , 'adversary_state_dict' : adversary.state_dict()
       , 'toptim_state_dict' : toptim.state_dict()
       , 'aoptim_state_dict' : aoptim.state_dict()
@@ -151,9 +158,10 @@ def save(path, transport, adversary, toptim, aoptim):
     , path
   )
 
-def load(path, transport, adversary, toptim, aoptim):
+def load(path, transports, adversary, toptim, aoptim):
   checkpoint = torch.load(path)
-  transport.load_state_dict(checkpoint["transport_state_dict"])
+  transports[0].load_state_dict(checkpoint["transport1_state_dict"])
+  transports[1].load_state_dict(checkpoint["transport2_state_dict"])
   adversary.load_state_dict(checkpoint["adversary_state_dict"])
   toptim.load_state_dict(checkpoint["toptim_state_dict"])
   aoptim.load_state_dict(checkpoint["aoptim_state_dict"])
@@ -164,7 +172,7 @@ def tonp(xs):
   return xs.cpu().detach().numpy()
 
 
-def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, device, nmax=-1):
+def plotPtTheta(transports, predict, targ, nps, writer, label, title, epoch, device, nmax=-1):
 
   target = tonp(targ)
   prediction = tonp(predict)
@@ -172,9 +180,10 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
   zeros = torch.zeros((predict.size()[0], nps), device=device)
 
   thetas = zeros.clone()
-  transporting = trans(transport, predict, thetas)
-  nomtrans = tonp(transporting)
-  nom = tonp(transporting + predict[:,0:1])
+  transporting = trans(transports, predict, thetas)
+  transported = transporting + predict[:,0:1]
+
+  nom = tonp(transported)
 
   postrans = []
   negtrans = []
@@ -188,18 +197,18 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
   for i in range(nps):
     thetas = zeros.clone()
     thetas[:,i] = 1
-    transporting = trans(transport, predict, thetas)
+    transporting = trans(transports, predict, thetas)
+    transported = transporting + predict[:,0:1]
     postrans.append(tonp(transporting))
-    pos.append(tonp(transporting + predict[:,0:1])[:,0])
+    pos.append(tonp(transported)[:,0])
 
     thetas = zeros.clone()
     thetas[:,i] = -1
-    transporting = trans(transport, predict, thetas)
+    transporting = trans(transports, predict, thetas)
+    transported = transporting + predict[:,0:1]
     negtrans.append(tonp(transporting))
-    neg.append(tonp(transporting + predict[:,0:1])[:,0])
+    neg.append(tonp(transported)[:,0])
 
-
-  del thetas, transporting, targ, predict
 
   rangex = (0, 4)
   rangey = (-1, 1)
@@ -259,33 +268,36 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
 
   plt.close()
 
-
   writer.add_scalar('binnedkldiv_' + label, binnedkldiv(htrans, htarg), epoch)
 
-  for i in range(len(hpos)):
-    hup = hpos[i]
-    hdown = hneg[i]
+  # for i in range(len(hpos)):
+  #   hup = hpos[i]
+  #   hdown = hneg[i]
 
-    writer.add_scalar('binnedkldiv_' + label + "_theta%d_up" % i, binnedkldiv(hup, htarg), epoch)
-    writer.add_scalar('binnedkldiv_' + label + "_theta%d_down" % i, binnedkldiv(hdown, htarg), epoch)
+  #   writer.add_scalar('binnedkldiv_' + label + "_theta%d_up" % i, binnedkldiv(hup, htarg), epoch)
+  #   writer.add_scalar('binnedkldiv_' + label + "_theta%d_down" % i, binnedkldiv(hdown, htarg), epoch)
 
 
 
-  cols = ["green", "orange", "magenta", "blue"]
+  cols = ["green", "orange", "magenta", "blue"]*20
 
 
   fig = plt.figure(figsize=(6, 6))
 
+  herr2 = np.zeros_like(htrans)
   for i in range(len(hpos)):
     hup = hpos[i]
     hdown = hneg[i]
 
-    (xs, ys) = histcurve(b, hup, 0)
-    plt.plot(xs, ys, linewidth=1, color=cols[i], alpha=0.5, label="$\\theta_%d$ variation" % i)
+    herr2 += ((np.abs(hup - htrans) + np.abs(hdown - htrans)) / 2.0)**2
 
-    (xs, ys) = histcurve(b, hdown, 0)
-    plt.plot(xs, ys, linewidth=1, color=cols[i], alpha=0.5)
+  herr = np.sqrt(herr2)
+  hup = htrans + herr
+  hdown = htrans - herr
 
+  (xs, yups) = histcurve(b, hup, 0)
+  (xs, ydowns) = histcurve(b, hdown, 0)
+  plt.fill_between(xs, yups, ydowns, color="gray", alpha=0.5, label="transported uncertainty")
 
   (xs, ys) = histcurve(b, htrans, 0)
   plt.plot(xs, ys, linewidth=2, color="black", label="transported prediction")
@@ -331,16 +343,11 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
   plt.plot((rangex[0], rangex[1]), (1, 1), color='black', linewidth=1, alpha=0.5)
 
 
-  for i in range(len(hpos)):
-    hup = hpos[i] / htrans
-    hdown = hneg[i] / htrans
-
-    (xs, ys) = histcurve(b, hup, 0)
-    plt.plot(xs, ys, linewidth=2, color=cols[i], alpha=0.5)
-
-    (xs, ys) = histcurve(b, hdown, 0)
-    plt.plot(xs, ys, linewidth=2, color=cols[i], alpha=0.5)
-
+  hup = hup / htrans
+  hdown = hdown / htrans
+  (xs, yups) = histcurve(b, hup, 1)
+  (xs, ydowns) = histcurve(b, hdown, 1)
+  plt.fill_between(xs, yups, ydowns, color="gray", alpha=0.5, label="transported uncertainty")
 
   (xs, ys) = histcurve(b, hpred / htrans, 1)
   plt.plot(
@@ -381,35 +388,39 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
 
   plt.plot((rangex[0], rangex[1]), (0, 0), color='black', linewidth=1, alpha=0.5)
 
-  for (i, ys) in enumerate(postrans):
-    _ = \
-      plt.scatter(
-          prediction[:nmax,0]
-        , ys[:nmax]
-        , c=cols[i]
-        , marker='.'
-        , alpha=0.5
-        , label="$\\theta_%d$ variation" % i
-      )
+  # for (i, ys) in enumerate(postrans):
+  #   _ = \
+  #     plt.scatter(
+  #         prediction[:nmax,0]
+  #       , ys[:nmax]
+  #       , c=cols[i]
+  #       , marker='.'
+  #       , alpha=0.5
+  #       , label="$\\theta_%d$ variation" % i
+  #     )
 
-  for (i, ys) in enumerate(negtrans):
-    _ = \
-      plt.scatter(
-          prediction[:nmax,0]
-        , ys[:nmax]
-        , c=cols[i]
-        , marker='.'
-        , alpha=0.5
-      )
+  # for (i, ys) in enumerate(negtrans):
+  #   _ = \
+  #     plt.scatter(
+  #         prediction[:nmax,0]
+  #       , ys[:nmax]
+  #       , c=cols[i]
+  #       , marker='.'
+  #       , alpha=0.5
+  #     )
 
+  thetas = torch.randn_like(thetas[:nmax])
+  predict = predict[:nmax]
+  transporting = trans(transports, predict, thetas)
+  transported = transporting + predict[:,0:1]
 
   _ =  \
     plt.scatter(
-        prediction[:nmax,0]
-      , nomtrans[:nmax]
+        tonp(predict[:,0])
+      , tonp(transporting)
       , c="black"
       , marker='.'
-      , label='nominal transport'
+      , label='stochastic transport'
     )
 
 
@@ -428,15 +439,19 @@ def plotPtTheta(transport, predict, targ, nps, writer, label, title, epoch, devi
 
 
 
-def trans(transport, mc, thetas):
-    tmp = transport(mc)
-    cv = tmp[:,0:1] # central value
-    var = tmp[:,1:] # eigen variations
-    coeffs = var - cv
+def trans(transports, mc, thetas):
+    x = transports[0](mc)
+    x = transports[1](torch.cat((x, thetas), axis=1))
+    return x + mc[:,0:1]
 
-    corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
+    # tmp = transport(mc)
+    # cv = tmp[:,0:1] # central value
+    # var = tmp[:,1:] # eigen variations
+    # coeffs = var - cv
 
-    return cv + corr.squeeze(2)
+    # corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
+
+    # return cv + corr.squeeze(2)
 
 
 
