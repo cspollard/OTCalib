@@ -210,15 +210,20 @@ def plotPtTheta(transports, predict, targ, nps, writer, label, title, epoch, dev
     neg.append(tonp(transported)[:,0])
 
 
-  rangex = (0, 4)
+  rangex = (-0.5, 4.5)
   rangey = (-1, 1)
-  nbins = 20
-  binw = 4.0 / nbins
+  nbins = 25
+  binw = (rangex[1] - rangex[0]) / nbins
+  
+  b = np.arange(nbins+1) * binw + rangex[0]
 
-  h, b, _ = \
+  def clip(x):
+    return np.clip(rangex[0], rangex[1], x)
+
+  h, _, _ = \
     plt.hist(
-        [prediction[:,0], nom[:,0], target[:,0]]
-      , bins = np.arange(nbins) * binw
+        list(map(clip, [ prediction[:,0], nom[:,0], target[:,0] ] ))
+      , bins=b
       , range=rangex
       , label=["original prediction", "transported prediction", "target"]
       , density=True
@@ -242,7 +247,7 @@ def plotPtTheta(transports, predict, targ, nps, writer, label, title, epoch, dev
 
   hpos, _, _ = \
     plt.hist(
-      pos
+      list(map(clip, pos))
     , bins=b
     , range=rangex
     , density=True
@@ -250,7 +255,7 @@ def plotPtTheta(transports, predict, targ, nps, writer, label, title, epoch, dev
 
   hneg, _, _ = \
     plt.hist(
-      neg
+      list(map(clip, neg))
     , bins=b
     , range=rangex
     , density=True
