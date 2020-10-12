@@ -114,7 +114,7 @@ def controlplots(n):
 def bootstrap(n, device):
   xs = np.random.rand(n)
   ws = lambertw((xs-1)/np.e, k=-1).astype(np.float)
-  return - torch.from_numpy(ws).to(device) - 1
+  return (- torch.from_numpy(ws).to(device) - 1) / 2.0
 
 
 def layer(n, m, act):
