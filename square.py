@@ -10,12 +10,17 @@ outprefix="square/"
 
 ndata = 1000
 nmc = 100000
-nthetas = 2
+nthetas = 4
 nepochs = 2**18
+
+ncritic = 2
+lr = 5e-3
+lrdecay = 0.95
 
 alldata = torch.rand((ndata, 1), device=device)
 alldata *= alldata
-mc = torch.rand((nmc, 1), device=device)
+mc = torch.sort(torch.rand((nmc, 1), device=device))[0]
+true = mc*mc
 
 def histcurve(bins, fills, default):
   xs = [x for x in bins for i in (1, 2)]
@@ -33,7 +38,9 @@ def combine(seq):
   return torch.cat((torch.mean(seq, 0), torch.std(seq, 0)), axis=0)
 
 
-name = "%d_datasamps_%d_mcsamps_%d_thetas" % (ndata, nmc, nthetas)
+name = \
+  "%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%.2e_lrdecay" \
+    % (ndata, nmc, nthetas, ncritic, lr, lrdecay)
 
 writer = SummaryWriter(outprefix + name)
 
@@ -66,8 +73,8 @@ critic.to(device)
 phi.to(device)
 
 
-toptim = torch.optim.RMSprop(transport.parameters(), lr=5e-4)
-aoptim = torch.optim.RMSprop(list(critic.parameters()) + list(phi.parameters()), lr=5e-4)
+toptim = torch.optim.RMSprop(transport.parameters(), lr=lr)
+aoptim = torch.optim.RMSprop(list(critic.parameters()) + list(phi.parameters()), lr=lr)
 
 for epoch in range(nepochs):
   if epoch > 0 and epoch % 1000 == 0:
@@ -103,6 +110,7 @@ for epoch in range(nepochs):
         [ mc.squeeze().detach().cpu().clamp(-0.01, 1.01)
         , alldata.squeeze().detach().cpu().clamp(-0.01, 1.01)
         , nom.squeeze().detach().cpu().clamp(-0.01, 1.01)
+        , true.squeeze().detach().cpu().clamp(-0.01, 1.01)
         ]
       , bins=bins
       , density=True
@@ -124,7 +132,7 @@ for epoch in range(nepochs):
 
     fig.clear()
 
-    htrans = hs[1]
+    htrans = hs[2]
     herr2 = np.zeros_like(htrans)
     for i in range(len(hpos)):
       hup = hpos[i]
@@ -139,10 +147,12 @@ for epoch in range(nepochs):
     (xs, hmc) = histcurve(bins, hs[0], 0)
     (xs, hdata) = histcurve(bins, hs[1], 0)
     (xs, htrans) = histcurve(bins, hs[2], 0)
+    (xs, htrue) = histcurve(bins, hs[3], 0)
     (xs, hup) = histcurve(bins, hup, 0)
     (xs, hdown) = histcurve(bins, hdown, 0)
 
     plt.plot(xs, htrans, linewidth=2, color="black", label="transported prediction")
+    plt.plot(xs, htrue, linewidth=2, linestyle="dotted", color="blue", label="true target")
     plt.fill_between(xs, hup, hdown, color="gray", alpha=0.5, label="transported uncertainty")
 
     plt.plot(
@@ -171,9 +181,20 @@ for epoch in range(nepochs):
     fig.clear()
 
     plt.scatter(
-        mc.squeeze().detach().cpu().clamp(-0.01, 1.01)
-      , trans.squeeze().detach().cpu()
+        mc.squeeze().detach().cpu()[::10]
+      , nom.squeeze().detach().cpu().clamp(-0.1, 1.01)[::10]
+      , color="black"
+      , label="proposed transport vector"
     )
+
+    plt.scatter(
+        mc.squeeze().detach().cpu()[::10]
+      , true.squeeze().detach().cpu()[::10]
+      , color="blue"
+      , label="true transport vector"
+    )
+
+    plt.legend()
 
     writer.add_figure("trans", fig, global_step=epoch)
 
@@ -212,7 +233,7 @@ for epoch in range(nepochs):
   toptim.zero_grad()
   aoptim.zero_grad()
 
-  if epoch % 5 != 0:
+  if epoch % ncritic != 0:
     continue
 
   fake = phi(combine(critic(mc + transport(mc1))))
