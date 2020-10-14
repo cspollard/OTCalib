@@ -8,27 +8,28 @@ print("torch version:", torch.__version__)
 device="cuda"
 outprefix="square/"
 
-ndata = 10000
-nmc = 100000
+ndata = 1000
+nmc = max(100000, 20*ndata)
+epochsize = 2**10
 nthetas = 4
-nepochs = 2**15
+nepochs = 2**18
 
-ncritic = 10
-lr = 5e-4
-# lrdecay = 1e-3
+ncritic = 5
+lr = 5e-5
 lam = 0
 wgan = True
 rmsprop = True
-cycle = True
+cycle = False # True
+lrdecay = 1e-5
 
 
 alldata = torch.rand((ndata, 1), device=device)
 alldata *= alldata
-mc = torch.sort(torch.rand((nmc, 1), device=device))[0]
-true = mc*mc
+allmc = torch.sort(torch.rand((nmc, 1), device=device))[0]
+true = allmc*allmc
 
 def histcurve(bins, fills, default):
-  xs = [x for x in bins for i in (1, 2)]
+  xs = [x for x in bins for _ in (1, 2)]
   ys = [default] + [fill for fill in fills for i in (1, 2)] + [default]
 
   return (xs, ys)
@@ -41,11 +42,13 @@ def combine(seq):
 
 
 name = \
-  "%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+  "batched_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
     % (ndata, nmc, nthetas, ncritic, lr, lam)
 
 if cycle:
   name = "onesycle_" + name
+elif lrdecay:
+  name = name + "%0.2e_lrdecay" % lrdecay
 
 if rmsprop:
   name = "rmsprop_" + name
@@ -60,8 +63,6 @@ writer = SummaryWriter(outprefix + name)
 transport = \
   torch.nn.Sequential(
     torch.nn.Linear(1, 32)
-  , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
@@ -86,21 +87,17 @@ def trans(nn, xs):
 
 critic = \
   torch.nn.Sequential(
-    torch.nn.Linear(1, 64)
+    torch.nn.Linear(1, 32)
   , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(64, 64)
-  , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(64, 64)
+  , torch.nn.Linear(32, 32)
   )
 
 
 phi = \
   torch.nn.Sequential(
-    torch.nn.Linear(128, 128)
+    torch.nn.Linear(64, 64)
   , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(128, 128)
-  , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(128, 1)
+  , torch.nn.Linear(64, 1)
   )
 
 transport.to(device)
@@ -121,7 +118,7 @@ if cycle:
     , lr
     , total_steps=nepochs
     , cycle_momentum=False
-    , pct_start=0.2
+    , pct_start=0.1
     )
 
   asched = torch.optim.lr_scheduler.OneCycleLR(
@@ -129,26 +126,29 @@ if cycle:
     , lr
     , total_steps=nepochs
     , cycle_momentum=False
-    , pct_start=0.2
+    , pct_start=0.1
     )
 
-
-# tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, 1-lrdecay)
-# asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, 1-lrdecay)
+elif lrdecay:
+  tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, 1-lrdecay)
+  asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, 1-lrdecay)
 
 for epoch in range(nepochs):
-  # lr *= (1-lrdecay)
-
+  if cycle:
+    lr = asched.get_last_lr()[0]
+  elif lrdecay:
+    lr *= (1-lrdecay)
+    
   if epoch > 0 and epoch % 500 == 0:
     print("epoch", epoch)
-    # print("learning rate:", lr)
+    print("learning rate:", lr)
 
     fig = plt.figure(figsize=(6, 6))
 
     thetas = torch.zeros((nmc, nthetas), device=device)
-    mc1 = torch.cat((mc, thetas), axis=1)
+    mc1 = torch.cat((allmc, thetas), axis=1)
     delta = trans(transport, mc1)
-    nom = mc + delta
+    nom = allmc + delta
 
 
     pos = []
@@ -156,21 +156,21 @@ for epoch in range(nepochs):
     for i in range(nthetas):
       thetas = torch.zeros((nmc, nthetas), device=device)
       thetas[:,i] = 1
-      mc1 = torch.cat((mc, thetas), axis=1)
-      transported = trans(transport, mc1) + mc
+      mc1 = torch.cat((allmc, thetas), axis=1)
+      transported = trans(transport, mc1) + allmc
       pos.append(tonp(transported))
 
       thetas = torch.zeros((nmc, nthetas), device=device)
       thetas[:,i] = -1
-      mc1 = torch.cat((mc, thetas), axis=1)
-      transported = trans(transport, mc1) + mc
+      mc1 = torch.cat((allmc, thetas), axis=1)
+      transported = trans(transport, mc1) + allmc
       neg.append(tonp(transported))
 
 
     bins = [-0.05] + [x*0.05 for x in range(21)]
     hs, bins, _ = \
       plt.hist(
-        [ mc.squeeze().detach().cpu().clamp(-0.01, 1.01)
+        [ allmc.squeeze().detach().cpu().clamp(-0.01, 1.01)
         , alldata.squeeze().detach().cpu().clamp(-0.01, 1.01)
         , nom.squeeze().detach().cpu().clamp(-0.01, 1.01)
         , true.squeeze().detach().cpu().clamp(-0.01, 1.01)
@@ -251,12 +251,13 @@ for epoch in range(nepochs):
     fig.clear()
 
     thetas = torch.randn((nmc, nthetas), device=device)
-    mc1 = torch.cat((mc, thetas), axis=1)
-    proposal = trans(transport, mc1) + mc
+    mc1 = torch.cat((allmc, thetas), axis=1)
+    proposal = trans(transport, mc1) + allmc
 
+    idxs = torch.sort(torch.randint(allmc.size()[0], (1024,)))[0]
     plt.scatter(
-        mc.squeeze().detach().cpu()[::10]
-      , proposal.squeeze().detach().cpu()[::10]
+        allmc[idxs].squeeze().detach().cpu()
+      , proposal[idxs].squeeze().detach().cpu()
       , color="black"
       , s=5
       , alpha=0.1
@@ -264,8 +265,8 @@ for epoch in range(nepochs):
     )
 
     plt.scatter(
-        mc.squeeze().detach().cpu()[::10]
-      , true.squeeze().detach().cpu()[::10]
+        allmc[idxs].squeeze().detach().cpu()
+      , true[idxs].squeeze().detach().cpu()
       , color="red"
       , label="true transport vector"
       , alpha=0.75
@@ -273,8 +274,8 @@ for epoch in range(nepochs):
     )
 
     plt.scatter(
-        mc.squeeze().detach().cpu()[::10]
-      , nom.squeeze().detach().cpu()[::10]
+        allmc[idxs].squeeze().detach().cpu()
+      , nom[idxs].squeeze().detach().cpu()
       , color="blue"
       , alpha=0.75
       , s=5
@@ -287,10 +288,14 @@ for epoch in range(nepochs):
 
     writer.add_figure("trans", fig, global_step=epoch)
 
+    res = torch.std(proposal - true)
+    writer.add_scalar("tranport_residual", res, global_step=epoch)
+
     plt.close()
 
-  data = alldata[torch.randint(ndata, (ndata,), device=device)]
-  thetas = torch.randn((nmc, nthetas), device=device)
+  data = alldata[torch.randint(ndata, (epochsize,), device=device)]
+  mc = allmc[torch.randint(nmc, (10*epochsize,), device=device)]
+  thetas = torch.randn((10*epochsize, nthetas), device=device)
 
   critdata = critic(data)
   combdata = combine(critdata)
@@ -327,8 +332,9 @@ for epoch in range(nepochs):
   for p in list(critic.parameters()) + list(phi.parameters()):
     p.data.clamp_(-0.1, 0.1)
 
-  if cycle:
-    writer.add_scalar('learningrate', asched.get_last_lr()[0], epoch)
+  writer.add_scalar('learningrate', lr, epoch)
+
+  if cycle or lrdecay:
     asched.step()
     tsched.step()
 
