@@ -8,25 +8,32 @@ print("torch version:", torch.__version__)
 device="cuda"
 outprefix="square/"
 
-ndata = 1000
-nmc = max(100000, 20*ndata)
-epochsize = 2**10
-nthetas = 4
+ndata = 100000
+nmc = 20*ndata
+epochsize = 100000 # 2**12
+nthetas = 1
 nepochs = 2**18
 
-ncritic = 5
-lr = 5e-5
+ncritic = 10
+lr = 5e-4
 lam = 0
 wgan = True
 rmsprop = True
 cycle = False # True
-lrdecay = 1e-5
+lrdecay = 0 # 1e-5
+testthetas = torch.randn((10, 1, nthetas), device=device).repeat((1, nmc, 1))
 
 
-alldata = torch.rand((ndata, 1), device=device)
+alldata = torch.rand((ndata,), device=device)
 alldata *= alldata
-allmc = torch.sort(torch.rand((nmc, 1), device=device))[0]
-true = allmc*allmc
+alldatacpu = alldata.detach().cpu().squeeze()
+
+allmc = torch.sort(torch.rand((nmc,), device=device))[0]
+allmccpu = allmc.detach().cpu().squeeze()
+truecpu = allmccpu*allmccpu
+
+alldata = alldata.view((ndata,1))
+allmc = allmc.view((nmc,1))
 
 def histcurve(bins, fills, default):
   xs = [x for x in bins for _ in (1, 2)]
@@ -42,11 +49,11 @@ def combine(seq):
 
 
 name = \
-  "batched_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+  "deeperstill_nongauss_batched_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
     % (ndata, nmc, nthetas, ncritic, lr, lam)
 
 if cycle:
-  name = "onesycle_" + name
+  name = "onecycle_" + name
 elif lrdecay:
   name = name + "%0.2e_lrdecay" % lrdecay
 
@@ -58,36 +65,48 @@ if wgan:
 
 name += "_%d_epochs" % nepochs
 
+name += "_%d_epochsize" % epochsize
+
 writer = SummaryWriter(outprefix + name)
 
 transport = \
   torch.nn.Sequential(
-    torch.nn.Linear(1, 32)
+    torch.nn.Linear(1+nthetas, 32)
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
-  , torch.nn.Linear(32, 1+nthetas)
+  , torch.nn.Linear(32, 32)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(32, 32)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(32, 1)
   )
 
 
 def trans(nn, xs):
-  original = xs[:,0:1]
-  thetas = xs[:,1:]
+  # original = xs[:,0:1]
+  # thetas = xs[:,1:]
 
-  tmp = nn(original)
+  # tmp = nn(original)
 
-  cv = tmp[:,0:1] # central value
-  var = tmp[:,1:] # eigen variations
-  coeffs = var - cv
+  # cv = tmp[:,0:1] # central value
+  # var = tmp[:,1:] # eigen variations
+  # coeffs = var - cv
 
-  corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
+  # corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
 
-  return cv + corr.squeeze(2)
+  # return cv + corr.squeeze(2)
+
+  return nn(xs)
 
 
 critic = \
   torch.nn.Sequential(
     torch.nn.Linear(1, 32)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(32, 32)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(32, 32)
   )
@@ -96,6 +115,8 @@ critic = \
 phi = \
   torch.nn.Sequential(
     torch.nn.Linear(64, 64)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(64, 64)
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(64, 1)
   )
@@ -138,89 +159,62 @@ for epoch in range(nepochs):
     lr = asched.get_last_lr()[0]
   elif lrdecay:
     lr *= (1-lrdecay)
-    
-  if epoch > 0 and epoch % 500 == 0:
+
+  if epoch > 0 and epoch % 100 == 0:
     print("epoch", epoch)
-    print("learning rate:", lr)
 
     fig = plt.figure(figsize=(6, 6))
 
     thetas = torch.zeros((nmc, nthetas), device=device)
     mc1 = torch.cat((allmc, thetas), axis=1)
-    delta = trans(transport, mc1)
-    nom = allmc + delta
+    nomcpu = (allmc + trans(transport, mc1)).detach().cpu().squeeze()
 
 
-    pos = []
-    neg = []
-    for i in range(nthetas):
-      thetas = torch.zeros((nmc, nthetas), device=device)
-      thetas[:,i] = 1
-      mc1 = torch.cat((allmc, thetas), axis=1)
-      transported = trans(transport, mc1) + allmc
-      pos.append(tonp(transported))
-
-      thetas = torch.zeros((nmc, nthetas), device=device)
-      thetas[:,i] = -1
-      mc1 = torch.cat((allmc, thetas), axis=1)
-      transported = trans(transport, mc1) + allmc
-      neg.append(tonp(transported))
-
+    variations = []
+    for i in range(testthetas.size()[0]):
+      mc1 = torch.cat((allmc, testthetas[i]), axis=1)
+      transported = (trans(transport, mc1) + allmc).detach().cpu().squeeze()
+      variations.append(transported)
 
     bins = [-0.05] + [x*0.05 for x in range(21)]
     hs, bins, _ = \
       plt.hist(
-        [ allmc.squeeze().detach().cpu().clamp(-0.01, 1.01)
-        , alldata.squeeze().detach().cpu().clamp(-0.01, 1.01)
-        , nom.squeeze().detach().cpu().clamp(-0.01, 1.01)
-        , true.squeeze().detach().cpu().clamp(-0.01, 1.01)
+        [ allmccpu.clamp(-0.01, 1.01)
+        , alldatacpu.clamp(-0.01, 1.01)
+        , nomcpu.clamp(-0.01, 1.01)
+        , truecpu.clamp(-0.01, 1.01)
         ]
       , bins=bins
       , density=True
       )
 
-    hpos, _, _ = \
+    hvars, _, _ = \
       plt.hist(
-        list(map(lambda h: np.clip(-0.01, 1.01, h).squeeze(), pos))
-      , bins=bins
-      , density=True
-      )
-
-    hneg, _, _ = \
-      plt.hist(
-        list(map(lambda h: np.clip(-0.01, 1.01, h).squeeze(), neg))
+        list(map(lambda h: np.clip(-0.01, 1.01, h.numpy()), variations))
       , bins=bins
       , density=True
       )
 
     fig.clear()
 
-    if nthetas == 1:
-      hpos = [hpos]
-      hneg = [hneg]
-
-    htrans = hs[2]
-    herr2 = np.zeros_like(htrans)
-    for i in range(len(hpos)):
-      hup = hpos[i]
-      hdown = hneg[i]
-
-      herr2 += ((np.abs(hup - htrans) + np.abs(hdown - htrans)) / 2.0)**2
-
-    herr = np.sqrt(herr2)
-    hup = htrans + herr
-    hdown = htrans - herr
+    varcurves = []
+    for h in hvars:
+      varcurves.append(histcurve(bins, h, 0)[1])
 
     (xs, hmc) = histcurve(bins, hs[0], 0)
     (xs, hdata) = histcurve(bins, hs[1], 0)
     (xs, htrans) = histcurve(bins, hs[2], 0)
     (xs, htrue) = histcurve(bins, hs[3], 0)
-    (xs, hup) = histcurve(bins, hup, 0)
-    (xs, hdown) = histcurve(bins, hdown, 0)
 
-    plt.plot(xs, htrans, linewidth=2, color="black", label="transported prediction")
-    plt.plot(xs, htrue, linewidth=2, linestyle="dotted", color="blue", label="true target")
-    plt.fill_between(xs, hup, hdown, color="gray", alpha=0.5, label="transported uncertainty")
+    plt.scatter(
+        (bins[:-1] + bins[1:]) / 2.0
+      , hs[1]
+      , label="observed target"
+      , color='black'
+      , linewidth=0
+      , marker='o'
+      , zorder=5
+      )
 
     plt.plot(
         xs
@@ -229,17 +223,31 @@ for epoch in range(nepochs):
       , color="red"
       , linestyle="dashed"
       , label="original prediction"
+      , zorder=3
       )
 
-    plt.scatter(
-        (bins[:-1] + bins[1:]) / 2.0
-      , hs[1]
-      , label="target"
-      , color='black'
-      , linewidth=0
-      , marker='o'
+
+    plt.plot(
+        xs
+      , htrans
+      , linewidth=2
+      , color="black"
+      , label="transported prediction"
+      , zorder=2
       )
 
+    plt.plot(
+        xs
+      , htrue
+      , linewidth=2
+      , linestyle="dotted"
+      , color="blue"
+      , label="true target"
+      , zorder=4
+      )
+
+    for curve in varcurves:
+      plt.plot(xs, curve, color="gray", alpha=0.25, zorder=1)
 
     fig.legend()
 
@@ -250,37 +258,42 @@ for epoch in range(nepochs):
 
     fig.clear()
 
-    thetas = torch.randn((nmc, nthetas), device=device)
-    mc1 = torch.cat((allmc, thetas), axis=1)
-    proposal = trans(transport, mc1) + allmc
+    idxs = torch.sort(torch.randint(nmc, (1024,)))[0]
 
-    idxs = torch.sort(torch.randint(allmc.size()[0], (1024,)))[0]
-    plt.scatter(
-        allmc[idxs].squeeze().detach().cpu()
-      , proposal[idxs].squeeze().detach().cpu()
-      , color="black"
-      , s=5
-      , alpha=0.1
-      , label="proposed transport vector"
-    )
-
-    plt.scatter(
-        allmc[idxs].squeeze().detach().cpu()
-      , true[idxs].squeeze().detach().cpu()
+    plt.plot(
+        allmccpu[idxs]
+      , truecpu[idxs]
       , color="red"
       , label="true transport vector"
       , alpha=0.75
-      , s=5
+      , fillstyle=None
+      , linewidth=2
+      , zorder=3
     )
 
-    plt.scatter(
-        allmc[idxs].squeeze().detach().cpu()
-      , nom[idxs].squeeze().detach().cpu()
+    plt.plot(
+        allmccpu[idxs]
+      , nomcpu[idxs]
       , color="blue"
-      , alpha=0.75
-      , s=5
       , label="nominal transport vector"
+      , alpha=0.75
+      , linewidth=2
+      , fillstyle=None
+      , zorder=2
     )
+
+    res = 0
+    for variation in variations:
+      plt.plot(
+          allmccpu[idxs]
+        , variation[idxs]
+        , color="gray"
+        , alpha=0.25
+        , fillstyle=None
+        , zorder=1
+      )
+
+      res += torch.mean((variation - truecpu)**2).item()
 
     plt.xlim(-0.1, 1.1)
     plt.ylim(-0.1, 1.1)
@@ -288,24 +301,21 @@ for epoch in range(nepochs):
 
     writer.add_figure("trans", fig, global_step=epoch)
 
-    res = torch.std(proposal - true)
-    writer.add_scalar("tranport_residual", res, global_step=epoch)
+    writer.add_scalar("transport_residual", np.sqrt(res) / len(variations), global_step=epoch)
 
     plt.close()
 
   data = alldata[torch.randint(ndata, (epochsize,), device=device)]
-  mc = allmc[torch.randint(nmc, (10*epochsize,), device=device)]
-  thetas = torch.randn((10*epochsize, nthetas), device=device)
+  # mc = allmc[torch.randint(nmc, (20*epochsize,), device=device)]
+  # thetas = torch.randn((20*epochsize, nthetas), device=device)
+  mc = allmc
+  thetas = torch.randn((nmc, nthetas), device=device)
 
-  critdata = critic(data)
-  combdata = combine(critdata)
-  real = phi(combdata)
+  real = phi(combine(critic(data)))
 
   mc1 = torch.cat((mc, thetas), axis=1)
   transmc = mc + trans(transport, mc1)
-  critmc = critic(transmc)
-  combmc = combine(critmc)
-  fake = phi(combmc)
+  fake = phi(combine(critic(transmc)))
 
   if wgan:
     advloss = fake - real
