@@ -49,7 +49,7 @@ def combine(seq):
 
 
 name = \
-  "deeperstill_nongauss_batched_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+  "deeperstiller_nongauss_batched_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
     % (ndata, nmc, nthetas, ncritic, lr, lam)
 
 if cycle:
@@ -72,6 +72,8 @@ writer = SummaryWriter(outprefix + name)
 transport = \
   torch.nn.Sequential(
     torch.nn.Linear(1+nthetas, 32)
+  , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(32, 32)
   , torch.nn.LeakyReLU(inplace=True)
@@ -118,6 +120,8 @@ phi = \
   , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(64, 64)
   , torch.nn.LeakyReLU(inplace=True)
+  , torch.nn.Linear(64, 64)
+  , torch.nn.LeakyReLU(inplace=True)
   , torch.nn.Linear(64, 1)
   )
 
@@ -160,7 +164,7 @@ for epoch in range(nepochs):
   elif lrdecay:
     lr *= (1-lrdecay)
 
-  if epoch > 0 and epoch % 100 == 0:
+  if epoch > 0 and epoch % 10 == 0:
     print("epoch", epoch)
 
     fig = plt.figure(figsize=(6, 6))
@@ -176,6 +180,7 @@ for epoch in range(nepochs):
       transported = (trans(transport, mc1) + allmc).detach().cpu().squeeze()
       variations.append(transported)
 
+
     bins = [-0.05] + [x*0.05 for x in range(21)]
     hs, bins, _ = \
       plt.hist(
@@ -190,7 +195,7 @@ for epoch in range(nepochs):
 
     hvars, _, _ = \
       plt.hist(
-        list(map(lambda h: np.clip(-0.01, 1.01, h.numpy()), variations))
+        list(map(lambda h: h.clamp(-0.01, 1.01).numpy(), variations))
       , bins=bins
       , density=True
       )
