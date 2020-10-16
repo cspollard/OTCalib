@@ -13,7 +13,7 @@ ndata = 1000
 nmc = 20*ndata
 epochsize = nmc
 nthetas = 2
-nepochs = 2**16
+nepochs = 2**17
 
 ncritic = 10
 lr = 5e-5
@@ -56,7 +56,7 @@ def trans(nn, xs):
   # return nn(xs)
 
 
-for lab in [str(x) for x in range(10)]:
+for lab in [str(x) for x in range(1)]:
   transport = \
     torch.nn.Sequential(
       torch.nn.Linear(1, 64)
@@ -184,8 +184,15 @@ for lab in [str(x) for x in range(10)]:
       nom = allmc + trans(transport, mc1)
       nomcpu = nom.detach().squeeze().cpu()
 
-      critmc = critic(nom).detach().squeeze().cpu().numpy()
-      critdata = critic(data).detach().squeeze().cpu().numpy()
+      variations = []
+      for i in range(testthetas.size()[0]):
+        mc1 = torch.cat((allmc, testthetas[i]), axis=1)
+        variations.append(trans(transport, mc1) + allmc)
+      del mc1
+
+      mcinputs = torch.cat([nom] + variations, axis=0)
+      critmc = critic(mcinputs).detach().squeeze().cpu()
+      critdata = critic(data).detach().squeeze().cpu()
 
       _, _, _ = \
         plt.hist(
@@ -197,12 +204,7 @@ for lab in [str(x) for x in range(10)]:
       fig.legend()
       writer.add_figure("critichist", fig, global_step=epoch)
 
-      variations = []
-      for i in range(testthetas.size()[0]):
-        mc1 = torch.cat((allmc, testthetas[i]), axis=1)
-        transported = (trans(transport, mc1) + allmc).detach().cpu().squeeze()
-        variations.append(transported)
-
+      variations = [v.detach().squeeze().cpu() for v in variations]
 
       bins = [-0.05] + [x*0.05 for x in range(21)]
       hs, bins, _ = \
@@ -218,7 +220,7 @@ for lab in [str(x) for x in range(10)]:
 
       hvars, _, _ = \
         plt.hist(
-          list(map(lambda h: h.clamp(-0.01, 1.01).numpy(), variations))
+          list(map(lambda h: h.clamp(-0.01, 1.01), variations))
         , bins=bins
         , density=True
         )
