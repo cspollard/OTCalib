@@ -12,7 +12,7 @@ outprefix="square/"
 ndata = 1000
 nmc = 20*ndata
 epochsize = nmc
-nthetas = 0
+nthetas = 2
 nepochs = 2**16
 
 ncritic = 10
@@ -181,8 +181,21 @@ for lab in [str(x) for x in range(10)]:
 
       thetas = torch.zeros((nmc, nthetas), device=device)
       mc1 = torch.cat((allmc, thetas), axis=1)
-      nomcpu = (allmc + trans(transport, mc1)).detach().cpu().squeeze()
+      nom = allmc + trans(transport, mc1)
+      nomcpu = nom.detach().squeeze().cpu()
 
+      critmc = critic(nom).detach().squeeze().cpu().numpy()
+      critdata = critic(data).detach().squeeze().cpu().numpy()
+
+      _, _, _ = \
+        plt.hist(
+          [critmc, critdata]
+        , label=["critic output MC", "critic output data"]
+        , density=True
+        )
+
+      fig.legend()
+      writer.add_figure("critichist", fig, global_step=epoch)
 
       variations = []
       for i in range(testthetas.size()[0]):
@@ -331,6 +344,9 @@ for lab in [str(x) for x in range(10)]:
     # mc = allmc[torch.randint(nmc, (20*epochsize,), device=device)]
     # thetas = torch.randn((20*epochsize, nthetas), device=device)
     mc = allmc
+
+    toptim.zero_grad()
+    aoptim.zero_grad()
 
     real = phi(combine(critic(data)))
 
