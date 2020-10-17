@@ -1,12 +1,14 @@
 import torch
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from time import time
 
 print("torch version:", torch.__version__)
 
-device="cuda"
+device="cpu"
 outprefix="square/"
 
 ndata = 1000
@@ -178,6 +180,7 @@ for lab in [str(x) for x in range(1)]:
       print("epoch", epoch)
 
       fig = plt.figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
 
       thetas = torch.zeros((nmc, nthetas), device=device)
       mc1 = torch.cat((allmc, thetas), axis=1)
@@ -194,21 +197,24 @@ for lab in [str(x) for x in range(1)]:
       critmc = critic(mcinputs).detach().squeeze().cpu()
       critdata = critic(data).detach().squeeze().cpu()
 
-      _, _, _ = \
-        plt.hist(
-          [critmc, critdata]
+      ax.hist(
+        [critmc, critdata]
         , label=["critic output MC", "critic output data"]
         , density=True
-        )
+      )
 
       fig.legend()
       writer.add_figure("critichist", fig, global_step=epoch)
+      plt.close()
 
       variations = [v.detach().squeeze().cpu() for v in variations]
 
+      fig = plt.figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
+      
       bins = [-0.05] + [x*0.05 for x in range(21)]
       hs, bins, _ = \
-        plt.hist(
+        ax.hist(
           [ allmccpu.clamp(-0.01, 1.01)
           , alldatacpu.clamp(-0.01, 1.01)
           , nomcpu.clamp(-0.01, 1.01)
@@ -219,13 +225,11 @@ for lab in [str(x) for x in range(1)]:
         )
 
       hvars, _, _ = \
-        plt.hist(
+        ax.hist(
           list(map(lambda h: h.clamp(-0.01, 1.01), variations))
         , bins=bins
         , density=True
         )
-
-      fig.clear()
 
       varcurves = []
       for h in hvars:
@@ -236,7 +240,10 @@ for lab in [str(x) for x in range(1)]:
       (xs, htrans) = histcurve(bins, hs[2], 0)
       (xs, htrue) = histcurve(bins, hs[3], 0)
 
-      plt.scatter(
+      fig = plt.figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
+      
+      ax.scatter(
           (bins[:-1] + bins[1:]) / 2.0
         , hs[1]
         , label="observed target"
@@ -246,7 +253,7 @@ for lab in [str(x) for x in range(1)]:
         , zorder=5
         )
 
-      plt.plot(
+      ax.plot(
           xs
         , hmc
         , linewidth=2
@@ -257,7 +264,7 @@ for lab in [str(x) for x in range(1)]:
         )
 
 
-      plt.plot(
+      ax.plot(
           xs
         , htrans
         , linewidth=2
@@ -266,7 +273,7 @@ for lab in [str(x) for x in range(1)]:
         , zorder=2
         )
 
-      plt.plot(
+      ax.plot(
           xs
         , htrue
         , linewidth=2
@@ -277,20 +284,23 @@ for lab in [str(x) for x in range(1)]:
         )
 
       for curve in varcurves:
-        plt.plot(xs, curve, color="blue", alpha=0.1, zorder=1)
+        ax.plot(xs, curve, color="blue", alpha=0.1, zorder=1)
 
       fig.legend()
 
-      plt.xlim(-0.1, 1.1)
-      plt.ylim(0, 6)
+      ax.set_xlim(-0.1, 1.1)
+      ax.set_ylim(0, 6)
 
       writer.add_figure("hist", fig, global_step=epoch)
 
-      fig.clear()
+      plt.close()
 
+      fig = plt.figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
+      
       idxs = torch.sort(torch.randint(nmc, (1024,)))[0]
 
-      plt.plot(
+      ax.plot(
           allmccpu[idxs]
         , truecpu[idxs]
         , color="red"
@@ -301,7 +311,7 @@ for lab in [str(x) for x in range(1)]:
         , zorder=3
       )
 
-      plt.plot(
+      ax.plot(
           allmccpu[idxs]
         , nomcpu[idxs]
         , color="blue"
@@ -314,7 +324,7 @@ for lab in [str(x) for x in range(1)]:
 
       res = 0
       for variation in variations:
-        plt.plot(
+        ax.plot(
             allmccpu[idxs]
           , variation[idxs]
           , color="blue"
@@ -325,15 +335,16 @@ for lab in [str(x) for x in range(1)]:
 
         res += torch.mean((variation - truecpu)**2).item()
 
-      plt.xlim(-0.1, 1.1)
-      plt.ylim(-0.1, 1.1)
-      plt.legend()
+      ax.set_xlim(-0.1, 1.1)
+      ax.set_ylim(-0.1, 1.1)
+      fig.legend()
 
       writer.add_figure("trans", fig, global_step=epoch)
 
       writer.add_scalar("transport_residual", np.sqrt(res) / len(variations), global_step=epoch)
 
       plt.close()
+      
       plottime += time() - startplot
       totaltime = time() - starttime
 
