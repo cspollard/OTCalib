@@ -13,10 +13,10 @@ ndata = 1000
 nmc = 20*ndata
 epochsize = nmc
 nthetas = 2
-nepochs = 2**17
+nepochs = 2**18
 
 ncritic = 10
-lr = 5e-5
+lr = 1e-5
 lam = 0
 wgan = True
 rmsprop = True
