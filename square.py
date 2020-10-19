@@ -9,16 +9,16 @@ print("torch version:", torch.__version__)
 device="cuda"
 outprefix="square/"
 
-ndata = 1000
-nmc = 20*ndata
-epochsize = nmc
-nthetas = 2
+ndata = 256
+nmc = ndata*64
+epochsize = ndata
+nthetas = 4
 nepochs = 2**18
 
 ncritic = 10
-lr = 1e-5
+lr = 3e-5
 lam = 0
-wgan = True
+wgan = False
 rmsprop = True
 cycle = False # True
 lrdecay = 0 # 1e-5
@@ -36,6 +36,8 @@ def tonp(xs):
 
 
 def combine(seq):
+  # expseq = torch.exp(seq)
+  # return torch.cat((torch.mean(expseq, 0), torch.std(expseq, 0)), axis=0)
   return torch.cat((torch.mean(seq, 0), torch.std(seq, 0)), axis=0)
 
 
@@ -43,15 +45,17 @@ def trans(nn, xs):
   original = xs[:,0:1]
   thetas = xs[:,1:]
 
-  tmp = nn(original)
+  # SQUARE
+  # tmp = nn(original)
 
-  cv = tmp[:,0:1] # central value
-  var = tmp[:,1:] # eigen variations
-  coeffs = var - cv
+  # cv = tmp[:,0:1] # central value
+  # var = tmp[:,1:] # eigen variations
+  # ENDSQUARE
+  coeffs = nn(original)
 
   corr = torch.bmm(thetas.unsqueeze(1), coeffs.unsqueeze(2))
 
-  return cv + corr.squeeze(2)
+  return corr.squeeze(2)
 
   # return nn(xs)
 
@@ -65,7 +69,9 @@ for lab in [str(x) for x in range(1)]:
     , torch.nn.LeakyReLU(inplace=True)
     , torch.nn.Linear(64, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(64, 1+nthetas)
+    , torch.nn.Linear(64, 64)
+    , torch.nn.LeakyReLU(inplace=True)
+    , torch.nn.Linear(64, nthetas)
     )
 
 
@@ -82,18 +88,25 @@ for lab in [str(x) for x in range(1)]:
     , torch.nn.LeakyReLU(inplace=True)
     , torch.nn.Linear(64, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(64, 1)
-    )
-
-
-  phi = \
-    torch.nn.Sequential(
-      torch.nn.Linear(2, 64)
-    , torch.nn.LeakyReLU(inplace=True)
     , torch.nn.Linear(64, 64)
     , torch.nn.LeakyReLU(inplace=True)
     , torch.nn.Linear(64, 1)
     )
+
+
+  phi = torch.nn.Identity()
+
+  # phi = \
+  #   torch.nn.Sequential(
+  #     torch.nn.Linear(2, 64)
+  #   , torch.nn.LeakyReLU(inplace=True)
+  #   , torch.nn.Linear(64, 64)
+  #   , torch.nn.LeakyReLU(inplace=True)
+  #   , torch.nn.Linear(64, 64)
+  #   , torch.nn.LeakyReLU(inplace=True)
+  #   , torch.nn.Linear(64, 1)
+  #   )
+
 
   transport.to(device)
   critic.to(device)
@@ -132,20 +145,23 @@ for lab in [str(x) for x in range(1)]:
   plottime = 0
 
 
-  alldata = torch.rand((ndata,), device=device)
-  alldata *= alldata
+  alldata = torch.randn((epochsize,), device=device) / 4 + 0.5
+  # SQUARE
+  # alldata *= alldata
   alldatacpu = alldata.detach().cpu().squeeze()
 
-  allmc = torch.sort(torch.rand((nmc,), device=device))[0]
+  allmc = torch.sort(torch.randn((nmc,), device=device))[0] / 4 + 0.5
   allmccpu = allmc.detach().cpu().squeeze()
-  truecpu = allmccpu*allmccpu
+  # SQUARE
+  # truecpu = allmccpu*allmccpu
+  truecpu = allmccpu
 
   alldata = alldata.view((ndata,1))
   allmc = allmc.view((nmc,1))
 
 
   name = \
-    "repeatthetas_gauss_batched_deeper_wider_onecritic_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+    "identity_repeatthetas_gauss_deeeeeep_onlycritic_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
       % (ndata, nmc, nthetas, ncritic, lr, lam)
 
   if cycle:
@@ -204,9 +220,21 @@ for lab in [str(x) for x in range(1)]:
       fig.legend()
       writer.add_figure("critichist", fig, global_step=epoch)
 
+      fig.clear()
+
+      _, _, _ = \
+        plt.hist(
+          [torch.exp(critmc), torch.exp(critdata)]
+        , label=["exp(critic output) MC", "exp(critic output) data"]
+        , density=True
+        )
+
+      fig.legend()
+      writer.add_figure("expcritichist", fig, global_step=epoch)
+
       variations = [v.detach().squeeze().cpu() for v in variations]
 
-      bins = [-0.05] + [x*0.05 for x in range(21)]
+      bins = [-0.05] + [x*0.05 for x in range(22)]
       hs, bins, _ = \
         plt.hist(
           [ allmccpu.clamp(-0.01, 1.01)
@@ -350,15 +378,15 @@ for lab in [str(x) for x in range(1)]:
     toptim.zero_grad()
     aoptim.zero_grad()
 
-    real = phi(combine(critic(data)))
+    real = combine(critic(data))
 
     thetas = torch.randn((1, nthetas), device=device).repeat((nmc, 1))
     mc1 = torch.cat((mc, thetas), axis=1)
     transmc = mc + trans(transport, mc1)
-    fake = phi(combine(critic(transmc)))
+    fake = combine(critic(transmc))
 
     if wgan:
-      advloss = fake - real
+      advloss = (real[0] - fake[0])**2 + (real[1] - fake[1])**2
     else:
       advloss = \
         torch.binary_cross_entropy_with_logits(fake, torch.zeros_like(fake)) \
@@ -372,15 +400,16 @@ for lab in [str(x) for x in range(1)]:
     # writer.add_scalar('stdcriticdata', combdata[1].item(), epoch)
     # writer.add_scalar('meancriticmc', combmc[0].item(), epoch)
     # writer.add_scalar('stdcriticmc', combmc[1].item(), epoch)
-    writer.add_scalar('phidata', real.item(), epoch)
-    writer.add_scalar('phimc', fake.item(), epoch)
-    writer.add_scalar('phidiff', real.item() - fake.item(), epoch)
+    writer.add_scalar('phidata', torch.mean(real).item(), epoch)
+    writer.add_scalar('phimc', torch.mean(fake).item(), epoch)
+    writer.add_scalar('phidiff', torch.mean(real).item() - torch.mean(fake).item(), epoch)
 
     toptim.zero_grad()
     aoptim.zero_grad()
 
-    for p in list(critic.parameters()) + list(phi.parameters()):
-      p.data.clamp_(-0.1, 0.1)
+    if wgan:
+      for p in list(critic.parameters()) + list(phi.parameters()):
+        p.data.clamp_(-0.1, 0.1)
 
     writer.add_scalar('learningrate', lr, epoch)
 
@@ -391,12 +420,15 @@ for lab in [str(x) for x in range(1)]:
     if epoch % ncritic != 0:
       continue
 
+    real = combine(critic(data))
+
     delta = trans(transport, mc1)
     distloss = torch.mean(torch.abs(delta))
 
-    fake = phi(combine(critic(mc + delta)))
+    fake = combine(critic(mc + delta))
+
     if wgan:
-      fakeloss = -fake
+      fakeloss = - ((real[0] - fake[0])**2 + (real[1] - fake[1])**2)
     else:
       fakeloss = torch.binary_cross_entropy_with_logits(fake, torch.ones_like(fake))
 
