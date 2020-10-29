@@ -20,13 +20,13 @@ epochsize = 2**11
 nepochs = 256
 
 ncritic = 5
-lr = 4
+lr = 1
 lam = 0
 wgan = True
 optim = "sgd"
 cycle = False # True
-lrdecay = 0 # 2e-2
-gradnorm = 0.1
+lrdecay = 2e-2
+gradnorm = 0 # 0.1
 
 normfac = float(ndata) / float(nmc)
 
@@ -39,11 +39,11 @@ testthetas = testthetas.repeat((1, nmc, 1))
 
 
 def varydata(theta1s, theta2s, xs):
-  # small shift left/right
-  ys = xs + 0.1*theta1s
+  scalesf = 0.1
+  widthsf = 0.25
 
-  # small change in width
-  return ys * torch.clamp(theta2s / 5 + 1, 0, 100)
+  # small shift left/right
+  return xs * torch.clamp(1 + theta2s*widthsf, 0, 5) + 0.1*theta1s
 
 
 
@@ -422,8 +422,8 @@ for lab in [str(x) for x in range(0, 5)]:
     gradlosssum = 0
 
     for batch in range(epochsize):
-      theta1s = torch.zeros((batchsize, 1), device=device)
-      theta2s = torch.randn((batchsize, 1), device=device)
+      theta1s = torch.randn((batchsize, 1), device=device)
+      theta2s = torch.zeros((batchsize, 1), device=device)
 
       data = \
         clampit(
