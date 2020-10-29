@@ -15,17 +15,18 @@ nthetas = int(argv[2])
 ndata = int(argv[1])
 label = argv[3]
 nmc = 2**17
-batchsize = 16
+batchsize = 64
 epochsize = 2**11
 nepochs = 256
 
-ncritic = 10
-lr = 1e-5
+ncritic = 5
+lr = 4
 lam = 0
-wgan = False # True
-optim = "rmsprop"
+wgan = True
+optim = "sgd"
 cycle = False # True
 lrdecay = 0 # 2e-2
+gradnorm = 0.1
 
 normfac = float(ndata) / float(nmc)
 
@@ -38,10 +39,10 @@ testthetas = testthetas.repeat((1, nmc, 1))
 
 
 def varydata(theta1s, theta2s, xs):
-  # small change in width
+  # small shift left/right
   ys = xs + 0.1*theta1s
 
-  # small shift left/right
+  # small change in width
   return ys * torch.clamp(theta2s / 5 + 1, 0, 100)
 
 
@@ -102,11 +103,11 @@ allmc = allmc.view((nmc,1))
 for lab in [str(x) for x in range(0, 5)]:
   transport = \
     torch.nn.Sequential(
-      torch.nn.Linear(1, 32)
+      torch.nn.Linear(1, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(32, 32)
+    , torch.nn.Linear(64, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(32, 1+nthetas)
+    , torch.nn.Linear(64, 1+nthetas)
     )
 
   # transport = torch.nn.Identity()
@@ -118,11 +119,11 @@ for lab in [str(x) for x in range(0, 5)]:
 
   critic = \
     torch.nn.Sequential(
-      torch.nn.Linear(1, 32)
+      torch.nn.Linear(1, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(32, 32)
+    , torch.nn.Linear(64, 64)
     , torch.nn.LeakyReLU(inplace=True)
-    , torch.nn.Linear(32, 1)
+    , torch.nn.Linear(64, 1)
     )
 
 
@@ -185,18 +186,21 @@ for lab in [str(x) for x in range(0, 5)]:
 
 
   name = \
-    "identity_3lay32_critic_3lay32_transport_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+    "identity_widthuncert_3lay64_critic_3lay64_transport_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
       % (ndata, nmc, nthetas, ncritic, lr, lam)
 
   if cycle:
     name = "onecycle_" + name
   elif lrdecay:
-    name = name + "%0.2e_lrdecay" % lrdecay
+    name = name + "_%0.2e_lrdecay" % lrdecay
 
   name = optim + "_" + name
 
   if wgan:
     name = "wgan_" + name
+
+  if gradnorm:
+    name = name + "_%0.2e_gradnorm" % gradnorm
 
   name += "_%d_epochs" % nepochs
 
@@ -207,6 +211,7 @@ for lab in [str(x) for x in range(0, 5)]:
   name += "_" + lab
 
   name += "_" + label
+
 
   writer = SummaryWriter(outprefix + name)
 
@@ -414,10 +419,11 @@ for lab in [str(x) for x in range(0, 5)]:
     fakemeansum = 0
     spreadsum = 0
     advlosssum = 0
+    gradlosssum = 0
 
     for batch in range(epochsize):
-      theta1s = torch.randn((batchsize, 1), device=device)
-      theta2s = torch.zeros((batchsize, 1), device=device)
+      theta1s = torch.zeros((batchsize, 1), device=device)
+      theta2s = torch.randn((batchsize, 1), device=device)
 
       data = \
         clampit(
@@ -444,14 +450,33 @@ for lab in [str(x) for x in range(0, 5)]:
       fakemeansum += torch.mean(fake).item()
 
       if wgan:
-        advloss = torch.mean(fake) - torch.mean(real)
+        fakeloss = torch.mean(fake)
+        realloss = -torch.mean(real)
 
       else:
-        advloss = \
+        fakeloss = \
           torch.nn.functional.binary_cross_entropy_with_logits(fake,
-              torch.zeros_like(fake), reduction="mean") \
-          + torch.nn.functional.binary_cross_entropy_with_logits(real,
+              torch.zeros_like(fake), reduction="mean")
+
+        realloss = \
+          torch.nn.functional.binary_cross_entropy_with_logits(real,
               torch.ones_like(real), reduction="mean")
+
+      advloss = fakeloss + realloss
+
+
+      # add gradient regularization
+      # from https://avg.is.tuebingen.mpg.de/publications/meschedericml2018
+      if gradnorm:
+        grad_params = torch.autograd.grad(realloss, critic.parameters(), create_graph=True, retain_graph=True)
+        norm = 0
+        for grad in grad_params:
+            norm += grad.pow(2).sum()
+        norm = norm.sqrt()
+
+        gradlosssum += gradnorm*norm.item()
+        advloss += gradnorm*norm
+
 
       advlosssum += advloss.item()
       advloss.backward()
@@ -494,7 +519,10 @@ for lab in [str(x) for x in range(0, 5)]:
 
 
     writer.add_scalar('advloss', advlosssum / epochsize, epoch)
+    writer.add_scalar('gradloss', gradlosssum / epochsize, epoch)
     writer.add_scalar('meanphidiff', (realmeansum - fakemeansum) / epochsize , epoch)
+    writer.add_scalar('meanrealphi', realmeansum / epochsize , epoch)
+    writer.add_scalar('meanfakephi', fakemeansum / epochsize , epoch)
     writer.add_scalar('meanspread', spreadsum / epochsize , epoch)
     writer.add_scalar('learningrate', lr, epoch)
 
