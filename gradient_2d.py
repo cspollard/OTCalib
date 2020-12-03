@@ -24,6 +24,8 @@ critic_outputs = 1
 number_thetas = 0
 batch_size = 1024
 
+use_gradient = True
+
 # ---------------------------------------
 # utilities for now
 # ---------------------------------------
@@ -97,7 +99,7 @@ def add_target_plot(observed_data, transported_data, global_step):
     writer.add_figure("target", fig, global_step = global_step)
     plt.close()    
     
-def add_critic_plot(critic, global_step):
+def add_network_plot(network, name, global_step):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -110,14 +112,14 @@ def add_critic_plot(critic, global_step):
     vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
 
     # evaluate critic
-    zvals = detach(critic(torch.from_numpy(vals)))
+    zvals = detach(network(torch.from_numpy(vals)))
     zvals = np.reshape(zvals, xgrid.shape)
 
     conts = ax.contourf(xgrid, ygrid, zvals, 100)
     ax.set_aspect(1)
     plt.colorbar(conts)
     
-    writer.add_figure("critic", fig, global_step = global_step)
+    writer.add_figure(name, fig, global_step = global_step)
     plt.close()
     
 def build_layer(number_inputs, number_outputs, activation):
@@ -136,9 +138,11 @@ def build_moments(inputs):
 def apply_transport(network, source, thetas):
     
     output = network(source)
-    gradval = torch.autograd.grad(output, source, grad_outputs = torch.ones_like(output), create_graph = True)[0]
+
+    if use_gradient:
+        output = torch.autograd.grad(output, source, grad_outputs = torch.ones_like(output), create_graph = True)[0]
     
-    return source + gradval
+    return source + output
 
 # ---------------------------------------
 # this is where things happen
@@ -151,14 +155,16 @@ runname = os.path.join(outdir, time_suffix)
 writer = SummaryWriter(runname)
 
 # build the transport network and start from somewhere close to the identity
-transport_network = build_fully_connected(2, 1, number_hidden_layers = 3, units_per_layer = 30,
+number_outputs = 1 if use_gradient else 2
+
+transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 2, units_per_layer = 30,
                                           activation = torch.nn.Tanh)
 transport_network[-1].weight.data *= 0.01
 transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
 critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 3, units_per_layer = 30,
-                               activation = torch.nn.LeakyReLU)
+                               activation = torch.nn.Tanh)
 critic.to(device)
 
 # build the optimisers
@@ -244,7 +250,9 @@ for batch in range(50000):
         
         transported_data_nominal = detach(apply_transport(transport_network, source_data, torch.zeros((number_thetas,))))
 
-        add_critic_plot(critic, global_step = batch)
+        add_network_plot(critic, name = "critic", global_step = batch)
+        if use_gradient:
+            add_network_plot(transport_network, name = "transport_potential", global_step = batch)
         add_source_plot(detach(source_data), global_step = batch)
         add_target_plot(observed_data = target_data, transported_data = transported_data_nominal, global_step = batch)
             
