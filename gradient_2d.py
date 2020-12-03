@@ -91,7 +91,8 @@ def add_target_plot(observed_data, transported_data, global_step):
 
     ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1)
 
-    ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red')
+    scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red')
+    ax.legend([scatter], ["target"])
     
     ax.set_xlim(-2.5, 2.5)
     ax.set_ylim(-2.5, 2.5)
