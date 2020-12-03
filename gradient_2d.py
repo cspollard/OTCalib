@@ -157,13 +157,13 @@ writer = SummaryWriter(runname)
 # build the transport network and start from somewhere close to the identity
 number_outputs = 1 if use_gradient else 2
 
-transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 2, units_per_layer = 30,
+transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 1, units_per_layer = 30,
                                           activation = torch.nn.Tanh)
 transport_network[-1].weight.data *= 0.01
 transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
-critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 3, units_per_layer = 30,
+critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
                                activation = torch.nn.Tanh)
 critic.to(device)
 
