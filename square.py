@@ -38,12 +38,19 @@ for i in range(nthetas):
 testthetas = testthetas.repeat((1, nmc, 1))
 
 
-def varydata(theta1s, theta2s, xs):
-  scalesf = 0.1
-  widthsf = 0.25
+def sigmodel(etas):
+  # sig is centered at 0 and has a width of 1
+  return torch.randn_like(etas, device=device) + etas
 
-  # small shift left/right
-  return xs * torch.clamp(1 + theta2s*widthsf, 0, 5) + 0.1*theta1s
+def bkgmodel(etas):
+  # bkg is centered at 0.5 \p, 0.1 and has a width of 0.5
+  offsets = torch.clamp(0.5 + etas*0.1, 0, 999)
+  return offsets + torch.randn_like(etas, device=device)
+
+
+def totalmodel(thetas, bkgfrac):
+  return torch.cat((sigmodel(etas[:,0:1]), bkgmodel(etas[:,1:])))
+
 
 
 
@@ -53,14 +60,9 @@ def histcurve(bins, fills, default):
 
   return (xs, ys)
 
+
 def tonp(xs):
   return xs.cpu().detach().numpy()
-
-
-def combine(seq):
-  # expseq = torch.exp(seq)
-  # return torch.cat((torch.mean(expseq, 0), torch.std(expseq, 0)), axis=0)
-  return torch.cat((torch.mean(seq, 0), torch.std(seq, 0)), axis=0)
 
 
 def trans(nn, xs):
@@ -82,22 +84,37 @@ def app(centralvalue, variations, thetas):
   return centralvalue + correction.squeeze(2)
 
 
-def clampit(xs):
-  return xs # torch.clamp(xs, -0.01, 1.01)
+
+sigfrac = 0.75
+nsig = int(ndata*sigfrac)
+nbkg = ndata - nsig
+
+nsigperbatch = int(batchsize*sigfrac)
+nbkgperbatch = batchsize - nsigperbatch
 
 
+dataetas = torch.zeros((ndata, 2), device=2)
 
-alldata = torch.randn((ndata,), device=device) / 4 + 0.5
-alldata = alldata
+dataetas[:,0] += 0.1
+dataetas]:,1] -= 0.1
+
+# give a small offset to data
+alldata = totalmodel(dataetas)
 alldatacpu = alldata.detach().cpu().squeeze()
 
-allmc = torch.sort(torch.randn((nmc,), device=device))[0] / 4 + 0.5
+
+nsigmc = int(nmc*sigfrac)
+nbkgmc = nmc - nsigmc
+
+allmc = torch.sort(totalmodel(torch.zeros((nmc, 2), device=device) , torch.zeros((nbkgmc,), device=device)
+        )
+    )[0]
+
 allmccpu = allmc.detach().cpu().squeeze()
 truecpu = allmccpu
 
 alldata = alldata.view((ndata,1))
 allmc = allmc.view((nmc,1))
-
 
 
 for lab in [str(x) for x in range(0, 5)]:
@@ -186,7 +203,7 @@ for lab in [str(x) for x in range(0, 5)]:
 
 
   name = \
-    "identity_widthuncert_3lay64_critic_3lay64_transport_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
+    "gauss_withbkg_3lay64_critic_3lay64_transport_%d_datasamps_%d_mcsamps_%d_thetas_%d_ncritic_%.2e_lr_%0.2e_lambda" \
       % (ndata, nmc, nthetas, ncritic, lr, lam)
 
   if cycle:
@@ -227,27 +244,39 @@ for lab in [str(x) for x in range(0, 5)]:
 
       fig = plt.figure(figsize=(6, 6))
 
-      (cv, vs) = trans(transport, allmc)
+      sigetas = torch.zeros((nsigmc, 1), device=device)
+      bkgetas = torch.zeros((nbkgmc, 1), device=device)
 
-      nom = clampit(allmc + cv)
+      sigmc = sigmodel(sigetas)
+      bkgmc = bkgmodel(bkgetas)
+
+
+      (cv, vs) = trans(transport, sigmc)
+
+      nom = sigmc + cv
       nomcpu = nom.detach().squeeze().cpu()
 
 
+      sigvariations = []
       variations = []
       for i in range(nthetas):
         thetas = testthetas[i]
+        sigvariations.append(
+            (app(cv, vs, thetas) + sigmc).detach().squeeze().cpu()
+          )
         variations.append(
-            clampit(app(cv, vs, thetas) + allmc).detach().squeeze().cpu()
+            torch.cat((sigvariations[i],
+              bkgmc.detach().squeeze().cpu())
           )
 
         thetas = testthetas[nthetas+i]
         variations.append(
-            clampit(app(cv, vs, thetas) + allmc).detach().squeeze().cpu()
+            (app(cv, vs, thetas) + sigmc).detach().squeeze().cpu()
           )
 
       thetas = torch.randn((nmc, nthetas), device=device)
-      critmc = critic(clampit(app(cv, vs, thetas) + allmc)).detach().squeeze().cpu()
-      critdata = critic(clampit(alldata)).detach().squeeze().cpu()
+      critmc = critic(app(cv, vs, thetas) + allmc).detach().squeeze().cpu()
+      critdata = critic(alldata).detach().squeeze().cpu()
 
 
       _, _, _ = \
@@ -264,13 +293,13 @@ for lab in [str(x) for x in range(0, 5)]:
 
       fig.clear()
 
-      bins = [-0.05] + [x*0.05 for x in range(22)]
+      bins = [(x-10)*0.2 for x in range(21)]
       hs, bins, _ = \
         plt.hist(
-          [ clampit(allmccpu)
+          [ allmccpu
           , alldatacpu
           , nomcpu
-          , clampit(truecpu)
+          , truecpu
           ]
         , bins=bins
         )
@@ -341,7 +370,7 @@ for lab in [str(x) for x in range(0, 5)]:
 
       fig.legend()
 
-      plt.xlim(-0.1, 1.1)
+      plt.xlim(-2, 2)
       plt.ylim(0, max(hdata)*1.3)
 
       writer.add_figure("hist", fig, global_step=epoch)
@@ -351,8 +380,8 @@ for lab in [str(x) for x in range(0, 5)]:
       idxs = torch.sort(torch.randint(nmc, (1024,)))[0]
 
       plt.plot(
-          clampit(allmccpu[idxs])
-        , clampit(truecpu[idxs])
+          allmccpu[idxs]
+        , truecpu[idxs]
         , color="red"
         , label="true transport vector"
         , alpha=0.75
@@ -362,7 +391,7 @@ for lab in [str(x) for x in range(0, 5)]:
       )
 
       plt.plot(
-          clampit(allmccpu[idxs])
+          allmccpu[idxs]
         , nomcpu[idxs]
         , color="blue"
         , label="transport vector"
@@ -376,8 +405,8 @@ for lab in [str(x) for x in range(0, 5)]:
       uncert = 0
       for variation in variations:
         plt.plot(
-            clampit(allmccpu[idxs])
-          , clampit(variation[idxs])
+            allmccpu[idxs]
+          , variation[idxs]
           , color="green"
           , alpha=0.25
           , fillstyle=None
@@ -387,8 +416,8 @@ for lab in [str(x) for x in range(0, 5)]:
         uncert += ((variation - nomcpu)**2).detach()
         res += ((variation - truecpu)**2).detach()
 
-      plt.xlim(-0.1, 1.1)
-      plt.ylim(-0.1, 1.1)
+      plt.xlim(-2, 2)
+      plt.ylim(-2, 2)
       plt.legend()
 
       writer.add_figure("trans", fig, global_step=epoch)
@@ -422,19 +451,14 @@ for lab in [str(x) for x in range(0, 5)]:
     gradlosssum = 0
 
     for batch in range(epochsize):
-      theta1s = torch.randn((batchsize, 1), device=device)
-      theta2s = torch.zeros((batchsize, 1), device=device)
+      data = alldata[torch.randint(ndata, (batchsize,), device=device)]
 
-      data = \
-        clampit(
-          varydata(
-            theta1s
-          , theta2s
-          , alldata[torch.randint(ndata, (batchsize,), device=device)]
-          )
-        )
+      # only include variations on the bkgs
+      sigetas = torch.zeros((nsigperbatch, 1), device=device)
+      bkgetas = torch.randn((nbkgperbatch, 1), device=device)
 
-      mc = allmc[torch.randint(nmc, (batchsize,), device=device)]
+      sigmc = sigmodel(sigetas)
+      bkgmc = bkgmodel(bkgetas)
 
       toptim.zero_grad()
       aoptim.zero_grad()
@@ -442,11 +466,11 @@ for lab in [str(x) for x in range(0, 5)]:
       real = critic(data)
       realmeansum += torch.mean(real).item()
 
-      thetas = torch.randn((batchsize, nthetas), device=device)
-      (cv, vs) = trans(transport, mc)
+      thetas = torch.randn((nsigperbatch, nthetas), device=device)
+      (cv, vs) = trans(transport, sigmc)
       delta = app(cv, vs, thetas)
 
-      fake = critic(clampit(mc + delta))
+      fake = critic(torch.cat((sigmc + delta, bkgmc)))
       fakemeansum += torch.mean(fake).item()
 
       if wgan:
@@ -495,11 +519,17 @@ for lab in [str(x) for x in range(0, 5)]:
       if batch % ncritic != 0:
         continue
 
+      # only include variations on the bkgs
+      bkgetas = torch.randn((nbkgperbatch, 1), device=device)
 
-      thetas = torch.randn((batchsize, nthetas), device=device)
-      (cv, vs) = trans(transport, mc)
+      sigmc = sigmodel(sigetas)
+      bkgmc = bkgmodel(bkgetas)
+
+
+      thetas = torch.randn((nsigperbatch, nthetas), device=device)
+      (cv, vs) = trans(transport, sigmc)
       delta = app(cv, vs, thetas)
-      fake = critic(clampit(mc + delta))
+      fake = critic(torch.cat((sigmc + delta, bkgmc)))
 
       spr = spread(cv, vs)
 
