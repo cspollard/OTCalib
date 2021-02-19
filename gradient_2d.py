@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 device = 'cpu'
 outdir = "gaussian_gradient_2d"
 
-number_samples_target = 5000
+number_samples_target = 2000
 number_samples_source = 20 * number_samples_target # MC
 
 lr_transport = 1e-4
@@ -86,18 +86,21 @@ def add_source_plot(source_data, global_step):
     writer.add_figure("source", fig, global_step = global_step)    
     plt.close()
 
-def add_target_plot(observed_data, transported_data, global_step):
+def add_target_plot(observed_data, transported_data, global_step, xlabel = "x", ylabel = "y"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1)
+    datahist = ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1, cmap = "Blues")
 
     scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red', alpha = 0.3)
-    ax.legend([scatter], ["target"])
+    ax.legend([scatter], ["data"])
     
     ax.set_xlim(-2.5, 2.5)
     ax.set_ylim(-2.5, 2.5)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
     plt.tight_layout()
     writer.add_figure("target", fig, global_step = global_step)
@@ -201,6 +204,35 @@ def add_transport_potential_comparison_plot_radial(true_potential, network, name
     ax.legend(loc = 'upper center', bbox_to_anchor = (0.5, 1.15), fancybox = True, shadow = True, ncol = 2)
 
     plt.tight_layout()
+    writer.add_figure(name, fig, global_step = global_step)
+    plt.close()    
+
+def add_transport_vector_field_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
+
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    # prepare grid for the evaluation of the network
+    xvals = np.linspace(-1.2, 1.2, 20, dtype = np.float32)
+    yvals = np.linspace(-1.2, 1.2, 20, dtype = np.float32)
+
+    xgrid, ygrid = np.meshgrid(xvals, yvals)
+    vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
+    
+    # compute transport field
+    vals_tensor = torch.from_numpy(vals)
+    vals_tensor.requires_grad = True
+    
+    transported_vals = apply_transport(network, vals_tensor)
+    transport_field_tensor = transported_vals - vals_tensor
+    transport_field = detach(transport_field_tensor)
+    
+    ax.quiver(vals[:,0], vals[:,1], transport_field[:,0], transport_field[:,1], color = 'black')
+    
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    # plt.tight_layout()
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()    
     
@@ -327,6 +359,7 @@ for batch in range(50000):
         add_network_plot(critic, name = "critic", global_step = batch)
         if use_gradient:
             add_network_plot(transport_network, name = "transport_potential", global_step = batch)
+            add_transport_vector_field_plot(transport_network, "transport_field", global_step = batch)
             add_transport_potential_comparison_plot_contours(true_transport_potential, transport_network, name = "transport_potential_comparison_contours", global_step = batch)
             add_transport_potential_comparison_plot_radial(true_transport_potential, transport_network, name = "transport_potential_comparison_radial", global_step = batch)
             
