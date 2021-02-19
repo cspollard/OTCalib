@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 # where to run
 device = 'cpu'
-outdir = "gaussian_gradient"
+outdir = "gaussian_gradient_2d"
 
 number_samples_target = 1000
 number_samples_source = 20 * number_samples_target # MC
@@ -21,9 +21,7 @@ lr_critic = 3e-3
 critic_updates_per_batch = 10
 critic_outputs = 1
 
-number_thetas = 0
 batch_size = 1024
-
 use_gradient = True
 
 # ---------------------------------------
@@ -136,7 +134,7 @@ def build_fully_connected(number_inputs, number_outputs, number_hidden_layers, u
 def build_moments(inputs):
     return torch.cat((torch.mean(inputs, 0), torch.std(inputs, 0)), axis = 0)
 
-def apply_transport(network, source, thetas):
+def apply_transport(network, source):
     
     output = network(source)
 
@@ -179,14 +177,10 @@ for batch in range(50000):
     for cur_adversary_update in range(critic_updates_per_batch):
     
         # sample current batch
-        # source_data_batch = source_data
-        # target_data_batch = target_data[torch.randint(low = 0, high = number_samples_target,
-        #                                               size = (number_samples_source,), device = device)]
         source_data_batch = source_data[torch.randint(low = 0, high = number_samples_source,
                                                       size = (batch_size,), device = device)]
         target_data_batch = target_data[torch.randint(low = 0, high = number_samples_target,
                                                       size = (batch_size,), device = device)]
-        thetas_batch = torch.randn((number_thetas,), device = device)
         
         # ------------------------------
         # train adversary
@@ -197,7 +191,7 @@ for batch in range(50000):
         
         critic_target = critic(target_data_batch)
         
-        transported_source_data_batch = apply_transport(transport_network, source_data_batch, thetas_batch)        
+        transported_source_data_batch = apply_transport(transport_network, source_data_batch)        
         critic_transported_source = critic(transported_source_data_batch)
 
         if use_wasserstein:
@@ -219,20 +213,16 @@ for batch in range(50000):
     # ------------------------------
 
     # sample current batch
-    # source_data_batch = source_data
-    # target_data_batch = target_data[torch.randint(low = 0, high = number_samples_target,
-    #                                               size = (number_samples_source,), device = device)]
     source_data_batch = source_data[torch.randint(low = 0, high = number_samples_source,
                                                   size = (batch_size,), device = device)]
     target_data_batch = target_data[torch.randint(low = 0, high = number_samples_target,
                                                   size = (batch_size,), device = device)]    
-    thetas_batch = torch.randn((number_thetas,), device = device)
     
     transport_optim.zero_grad()
     adversary_optim.zero_grad()
 
     # minimise the Wasserstein loss between transported source and bootstrapped target
-    transported_source_data_batch = apply_transport(transport_network, source_data_batch, thetas_batch)
+    transported_source_data_batch = apply_transport(transport_network, source_data_batch)
     critic_output = critic(transported_source_data_batch)
     
     if use_wasserstein:
@@ -249,7 +239,7 @@ for batch in range(50000):
         # make diagnostic plots
         # ------------------------------
         
-        transported_data_nominal = detach(apply_transport(transport_network, source_data, torch.zeros((number_thetas,))))
+        transported_data_nominal = detach(apply_transport(transport_network, source_data))
 
         add_network_plot(critic, name = "critic", global_step = batch)
         if use_gradient:
