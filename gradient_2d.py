@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 device = 'cpu'
 outdir = "gaussian_gradient_2d"
 
-number_samples_target = 1000
+number_samples_target = 5000
 number_samples_source = 20 * number_samples_target # MC
 
 lr_transport = 1e-4
@@ -33,6 +33,9 @@ def true_transport_vector(x):
 
 def true_transport_function(x):
     return x + true_transport_vector(x)
+
+def true_transport_potential(x, y):
+    return 0.5 * (np.square(x) + np.square(y))
 
 def generate_source(number_samples, device):
     angles = 2 * np.pi * torch.rand((number_samples,), device = device)
@@ -78,8 +81,9 @@ def add_source_plot(source_data, global_step):
 
     ax.set_xlim(-2.5, 2.5)
     ax.set_ylim(-2.5, 2.5)
-    
-    writer.add_figure("source", fig, global_step = global_step)
+
+    plt.tight_layout()
+    writer.add_figure("source", fig, global_step = global_step)    
     plt.close()
 
 def add_target_plot(observed_data, transported_data, global_step):
@@ -89,12 +93,13 @@ def add_target_plot(observed_data, transported_data, global_step):
 
     ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1)
 
-    scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red')
+    scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red', alpha = 0.3)
     ax.legend([scatter], ["target"])
     
     ax.set_xlim(-2.5, 2.5)
     ax.set_ylim(-2.5, 2.5)
-    
+
+    plt.tight_layout()
     writer.add_figure("target", fig, global_step = global_step)
     plt.close()    
     
@@ -103,23 +108,101 @@ def add_network_plot(network, name, global_step):
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    # prepare grid for the evaluation of the critic
+    # prepare grid for the evaluation of the network
     xvals = np.linspace(-2.0, 2.0, 50, dtype = np.float32)
     yvals = np.linspace(-2.0, 2.0, 50, dtype = np.float32)
 
     xgrid, ygrid = np.meshgrid(xvals, yvals)
     vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
 
-    # evaluate critic
+    # evaluate network
     zvals = detach(network(torch.from_numpy(vals)))
     zvals = np.reshape(zvals, xgrid.shape)
 
     conts = ax.contourf(xgrid, ygrid, zvals, 100)
     ax.set_aspect(1)
     plt.colorbar(conts)
-    
+
+    plt.tight_layout()
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()
+
+def add_transport_potential_comparison_plot_contours(true_potential, network, name, global_step, contour_values = np.linspace(0.05, 3.0, 20), xlabel = "x", ylabel = "y"):
+
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    # prepare grid for the evaluation of the network
+    xvals = np.linspace(-1.2, 1.2, 50, dtype = np.float32)
+    yvals = np.linspace(-1.2, 1.2, 50, dtype = np.float32)
+
+    xgrid, ygrid = np.meshgrid(xvals, yvals)
+    vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
+
+    # evaluate network
+    zvals_network = detach(network(torch.from_numpy(vals)))
+    zvals_network = np.reshape(zvals_network, xgrid.shape)
+    zvals_network -= np.min(zvals_network)
+
+    # evaluate true potential
+    zvals_true = true_potential(xgrid, ygrid)
+    zvals_true -= np.min(zvals_true)
+
+    cont_true = ax.contour(xgrid, ygrid, zvals_true, 10, colors = 'black', linestyles = 'solid', levels = contour_values, linewidths = 2.0)
+    cont_network = ax.contour(xgrid, ygrid, zvals_network, 10, colors = 'red', linestyles = 'dashed', levels = contour_values)
+    
+    cont_network.collections[0].set_label("learned potential")
+    cont_true.collections[0].set_label("true potential")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                     box.width, box.height * 0.9])
+    
+    ax.set_aspect(1)
+    ax.legend(loc = 'upper center', bbox_to_anchor = (0.5, 1.15), fancybox = True, shadow = True, ncol = 2)
+
+    # plt.tight_layout()
+    writer.add_figure(name, fig, global_step = global_step)
+    plt.close()    
+
+def add_transport_potential_comparison_plot_radial(true_potential, network, name, global_step, contour_values = np.linspace(0.05, 3.0, 20), xlabel = "x", ylabel = "transport potential"):
+
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    # prepare grid for the evaluation of the network
+    xvals = np.linspace(0, 1.2, 50, dtype = np.float32)
+    yvals = np.zeros_like(xvals)
+
+    vals = np.stack([xvals.flatten(), yvals.flatten()], axis = 1)
+
+    # evaluate network
+    zvals_network = detach(network(torch.from_numpy(vals)))
+    zvals_network -= np.min(zvals_network)
+
+    # evaluate true potential
+    zvals_true = true_potential(xvals, yvals)
+    zvals_true -= np.min(zvals_true)
+
+    ax.plot(xvals, zvals_true, color = 'black', linestyle = 'solid', linewidth = 2.0, label = "true potential")
+    ax.plot(xvals, zvals_network, color = 'red', linestyle = 'dashed', label = "learned potential")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                     box.width, box.height * 0.9])
+    
+    ax.set_aspect(1)
+    ax.legend(loc = 'upper center', bbox_to_anchor = (0.5, 1.15), fancybox = True, shadow = True, ncol = 2)
+
+    plt.tight_layout()
+    writer.add_figure(name, fig, global_step = global_step)
+    plt.close()    
     
 def build_layer(number_inputs, number_outputs, activation):
     return torch.nn.Sequential(torch.nn.Linear(number_inputs, number_outputs), activation())
@@ -244,6 +327,9 @@ for batch in range(50000):
         add_network_plot(critic, name = "critic", global_step = batch)
         if use_gradient:
             add_network_plot(transport_network, name = "transport_potential", global_step = batch)
+            add_transport_potential_comparison_plot_contours(true_transport_potential, transport_network, name = "transport_potential_comparison_contours", global_step = batch)
+            add_transport_potential_comparison_plot_radial(true_transport_potential, transport_network, name = "transport_potential_comparison_radial", global_step = batch)
+            
         add_source_plot(detach(source_data), global_step = batch)
         add_target_plot(observed_data = target_data, transported_data = transported_data_nominal, global_step = batch)
             
