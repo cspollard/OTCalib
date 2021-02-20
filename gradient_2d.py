@@ -13,11 +13,15 @@ import matplotlib.pyplot as plt
 device = 'cpu'
 outdir = "gaussian_gradient_2d"
 
-number_samples_target = 2000
+number_samples_target = 1000
 number_samples_source = 20 * number_samples_target # MC
 
-lr_transport = 1e-4
-lr_critic = 3e-3
+# lr_transport = 1e-4
+# lr_critic = 3e-3
+
+lr_transport = 8e-4
+lr_critic = 4e-3
+
 critic_updates_per_batch = 10
 critic_outputs = 1
 
@@ -28,25 +32,38 @@ use_gradient = True
 # utilities for now
 # ---------------------------------------
 
-def true_transport_vector(x):
-    return x * 0.5
-
-def true_transport_function(x):
-    return x + true_transport_vector(x)
-
-def true_transport_potential(x, y):
+def true_transport_potential_circle(x, y):
     return 0.5 * (np.square(x) + np.square(y))
 
-def generate_source(number_samples, device):
+def generate_source_circle(number_samples, device):
     angles = 2 * np.pi * torch.rand((number_samples,), device = device)
     radii = torch.sqrt(torch.rand((number_samples,), device = device))
     source = torch.stack([radii * torch.cos(angles), radii * torch.sin(angles)], dim = 1)
     return source
 
-def generate_target(number_samples, device):
+def generate_target_circle(number_samples, device):
     angles = 2 * np.pi * torch.rand((number_samples,), device = device)
     radii = 2.0 * torch.sqrt(torch.rand((number_samples,), device = device))
     target = torch.stack([radii * torch.cos(angles), radii * torch.sin(angles)], dim = 1)
+    return target
+
+def true_transport_potential_square(x, y):
+    return 0.0 * x
+
+def generate_source_square(number_samples, device):
+    xvals = 2 * torch.rand((number_samples,), device = device) - 1
+    yvals = 2 * torch.rand((number_samples,), device = device) - 1
+    source = torch.stack([xvals, yvals], dim = 1)
+    return source
+
+def generate_target_square(number_samples, device):
+    angle = np.pi / 4
+    cosval = np.cos(angle)
+    sinval = np.sin(angle)
+    
+    xvals = 2 * torch.rand((number_samples,), device = device) - 1
+    yvals = 2 * torch.rand((number_samples,), device = device) - 1
+    target = torch.stack([cosval * xvals + sinval * yvals, cosval * yvals - sinval * xvals], dim = 1)
     return target
 
 def get_bin_centers(edges):
@@ -59,12 +76,19 @@ def detach(obj):
 # prepare and cache some information
 # ---------------------------------------
 
+# type of data to use
+# true_transport_potential = true_transport_potential_circle
+# generate_target = generate_target_circle
+# generate_source = generate_source_circle
+
+true_transport_potential = true_transport_potential_square
+generate_target = generate_target_square
+generate_source = generate_source_square
+
 # prepare the data
 source_data = generate_source(number_samples_source, device = device)
 target_data = generate_target(number_samples_target, device = device)
 source_data.requires_grad = True
-
-true_transported_data = true_transport_function(source_data)
 
 use_wasserstein = False
 
@@ -91,7 +115,7 @@ def add_target_plot(observed_data, transported_data, global_step, xlabel = "x", 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    datahist = ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1, cmap = "Blues")
+    datahist = ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1, cmap = "plasma")
 
     scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red', alpha = 0.3)
     ax.legend([scatter], ["data"])
@@ -121,6 +145,7 @@ def add_network_plot(network, name, global_step):
     # evaluate network
     zvals = detach(network(torch.from_numpy(vals)))
     zvals = np.reshape(zvals, xgrid.shape)
+    zvals -= np.min(zvals)
 
     conts = ax.contourf(xgrid, ygrid, zvals, 100)
     ax.set_aspect(1)
@@ -130,7 +155,7 @@ def add_network_plot(network, name, global_step):
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()
 
-def add_transport_potential_comparison_plot_contours(true_potential, network, name, global_step, contour_values = np.linspace(0.05, 3.0, 20), xlabel = "x", ylabel = "y"):
+def add_transport_potential_comparison_plot_contours(true_potential, network, name, global_step, contour_values = np.linspace(0.2, 2.0, 15), xlabel = "x", ylabel = "y"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -271,14 +296,23 @@ writer = SummaryWriter(runname)
 # build the transport network and start from somewhere close to the identity
 number_outputs = 1 if use_gradient else 2
 
+# transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 1, units_per_layer = 30,
+#                                           activation = torch.nn.Tanh)
+
 transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 1, units_per_layer = 30,
                                           activation = torch.nn.Tanh)
-transport_network[-1].weight.data *= 0.01
-transport_network[-1].bias.data *= 0.01
+
+
+# transport_network[-1].weight.data *= 0.01
+# transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
 critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
                                activation = torch.nn.Tanh)
+
+# critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
+#                                activation = torch.nn.Tanh)
+
 critic.to(device)
 
 # build the optimisers
@@ -357,9 +391,10 @@ for batch in range(50000):
         transported_data_nominal = detach(apply_transport(transport_network, source_data))
 
         add_network_plot(critic, name = "critic", global_step = batch)
+        add_transport_vector_field_plot(transport_network, "transport_field", global_step = batch)
+        
         if use_gradient:
             add_network_plot(transport_network, name = "transport_potential", global_step = batch)
-            add_transport_vector_field_plot(transport_network, "transport_field", global_step = batch)
             add_transport_potential_comparison_plot_contours(true_transport_potential, transport_network, name = "transport_potential_comparison_contours", global_step = batch)
             add_transport_potential_comparison_plot_radial(true_transport_potential, transport_network, name = "transport_potential_comparison_radial", global_step = batch)
             
