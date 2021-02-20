@@ -7,7 +7,7 @@ import scipy.special
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 # where to run
 device = 'cpu'
@@ -130,7 +130,7 @@ def add_target_plot(observed_data, transported_data, global_step, xlabel = "x", 
     writer.add_figure("target", fig, global_step = global_step)
     plt.close()    
     
-def add_network_plot(network, name, global_step):
+def add_network_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -147,9 +147,15 @@ def add_network_plot(network, name, global_step):
     zvals = np.reshape(zvals, xgrid.shape)
     zvals -= np.min(zvals)
 
-    conts = ax.contourf(xgrid, ygrid, zvals, 100)
+    conts = ax.contourf(xgrid, ygrid, zvals, 100, cmap = "inferno")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
     ax.set_aspect(1)
-    plt.colorbar(conts)
+    plt.colorbar(conts, cax = cax)
 
     plt.tight_layout()
     writer.add_figure(name, fig, global_step = global_step)
