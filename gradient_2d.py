@@ -13,16 +13,18 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 device = 'cpu'
 outdir = "gaussian_gradient_2d"
 
-number_samples_target = 1000
+number_samples_target = 2000
 number_samples_source = 20 * number_samples_target # MC
 
-# lr_transport = 1e-4
-# lr_critic = 3e-3
+lr_transport = 7e-4
+lr_critic = 3e-3
 
-lr_transport = 8e-4
-lr_critic = 4e-3
+# lr_transport = 8e-4
+# lr_critic = 4e-3
 
-critic_updates_per_batch = 10
+# critic_updates_per_batch = 10
+critic_updates_per_batch = 20
+
 critic_outputs = 1
 
 batch_size = 1024
@@ -161,7 +163,7 @@ def add_network_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()
 
-def add_transport_potential_comparison_plot_contours(true_potential, network, name, global_step, contour_values = np.linspace(0.2, 2.0, 15), xlabel = "x", ylabel = "y"):
+def add_transport_potential_comparison_plot_contours(true_potential, network, name, global_step, contour_values = np.linspace(0.05, 2.0, 15), xlabel = "x", ylabel = "y"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
