@@ -28,11 +28,11 @@ use_gradient = True
 # utilities for now
 # ---------------------------------------
 
-def true_transport_vector(x):
-    return 2
+def true_transport_potential(x):
+    return 0.5 * np.square(x) + 2 * x
 
 def true_transport_function(x):
-    return x + true_transport_vector(x)
+    return 2 * x + 2
 
 def generate_source(number_samples, device):
     source = torch.randn((number_samples,), device = device) - 1
@@ -74,7 +74,33 @@ use_wasserstein = False
 # utilities for later
 # ---------------------------------------
 
-def add_transport_closure_plot(transported_data_nominal, writer, global_step):
+def add_transport_potential_comparison_plot(true_potential, network, name, writer, global_step, xlabel = "x", ylabel = "transport potential"):
+
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    xvals = np.linspace(-5, 5, 50, dtype = np.float32)
+    xvals = np.expand_dims(xvals, axis = 1)
+    
+    vals_network = detach(network(torch.from_numpy(xvals)))
+    vals_network -= np.min(vals_network)
+    
+    vals_true = true_potential(xvals)
+    vals_true -= np.min(vals_true)
+
+    ax.plot(xvals, vals_true, color = "black", linestyle = "solid", linewidth = 2.0, label = "true potential")
+    ax.plot(xvals, vals_network, color = "red", linestyle = "dashed", label = "learned potential")
+
+    leg = ax.legend()
+    leg.get_frame().set_linewidth(0.0)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    writer.add_figure(name, fig, global_step = global_step)
+    plt.close()
+
+def add_transport_closure_plot(transported_data_nominal, writer, global_step, xlabel = "x"):
 
     def plot_histogram_from_data(ax, data, **kwargs):
         hist, edges = np.histogram(data, bins = bin_edges)
@@ -85,41 +111,48 @@ def add_transport_closure_plot(transported_data_nominal, writer, global_step):
     ax = fig.add_subplot(111)
 
     ax.hist(get_bin_centers(source_data_edges), weights = source_data_hist / sum(source_data_hist),
-            histtype = 'step', bins = source_data_edges, label = "original prediction", color = "black", ls = "dotted", lw = 2)
+            histtype = 'step', bins = source_data_edges, label = "MC", color = "black", ls = "dotted", lw = 2)
     ax.hist(get_bin_centers(true_transported_data_edges), weights = true_transported_data_hist / sum(true_transported_data_hist),
-            histtype = 'step', bins = true_transported_data_edges, label = "true target", color = "red", ls = "dashed", lw = 2)
+            histtype = 'step', bins = true_transported_data_edges, label = "truth", color = "red", ls = "dashed", lw = 2)
 
-    plot_histogram_from_data(ax, transported_data_nominal, label = "transported prediction", color = "blue", lw = 2)
+    plot_histogram_from_data(ax, transported_data_nominal, label = "transported MC", color = "blue", lw = 2)
 
     ax.scatter(get_bin_centers(target_data_edges), target_data_hist / sum(target_data_hist), color = 'black',
-               label = "observed target")
+               label = "data")
     leg = ax.legend()
-    leg.get_frame().set_linewidth(0.0)    
+    leg.get_frame().set_linewidth(0.0)
+
+    ax.set_xlabel(xlabel)
 
     writer.add_figure("transport_closure", fig, global_step = global_step)
     plt.close()
 
-def add_transport_plot(xval, yval_nominal, writer, global_step):
+def add_transport_plot(xval, yval_nominal, writer, global_step, xlabel = "x", ylabel = "transport function"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    ax.plot(xval, yval_nominal, color = "blue", lw = 2, label = "transport function")
-
-    ax.plot(detach(source_data), detach(true_transported_data), color = "red", lw = 2, label = "true transport function")
+    ax.plot(xval, yval_nominal, color = "red", linestyle = "dashed", label = "learned transport function")
+    ax.plot(detach(source_data), detach(true_transported_data - source_data), linestyle = "solid", color = "black", lw = 2, label = "true transport function")
+    
     leg = ax.legend()
     leg.get_frame().set_linewidth(0.0)    
 
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
     writer.add_figure("transport", fig, global_step = global_step)
     plt.close()
 
-def add_critic_plot(xval, yval, writer, global_step):
+def add_critic_plot(xval, yval, writer, global_step, xlabel = "x"):
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
     ax.plot(xval, yval, color = "black", lw = 2, label = "critic")
 
+    ax.set_xlabel(xlabel)
+    
     writer.add_figure("critic", fig, global_step = global_step)
     plt.close()
     
@@ -242,9 +275,10 @@ for batch in range(50000):
         # ------------------------------        
         transported_data_nominal = apply_transport(transport_network, source_data)
         critic_output_nominal = critic(transported_data_nominal)
-                
+
+        add_transport_potential_comparison_plot(true_transport_potential, transport_network, name = "transport_potential_comparison", writer = writer, global_step = batch)
         add_transport_closure_plot(transported_data_nominal = detach(transported_data_nominal), writer = writer, global_step = batch)
-        add_transport_plot(xval = detach(source_data), yval_nominal = detach(transported_data_nominal), writer = writer, global_step = batch)
+        add_transport_plot(xval = detach(source_data), yval_nominal = detach(transported_data_nominal - source_data), writer = writer, global_step = batch)
         add_critic_plot(xval = detach(source_data), yval = detach(critic_output_nominal), writer = writer, global_step = batch)
 
 writer.close()
