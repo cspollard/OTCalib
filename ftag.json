@@ -1,0 +1,19 @@
+{ "outdir" : "ftag"
+, "device" : "cuda"
+, "number_samples_target" : 32768
+, "number_samples_source" : 50000
+
+, "number_thetas" : 2
+, "batch_size" : 1024
+, "epoch_size" : 256
+, "number_epochs" : 500
+
+, "scalar_layers" : [16, 8]
+, "critic_layers" : [16]
+
+, "lr_scalar" : 3e-5
+, "lr_critic" : 1e-4
+, "critic_updates_per_batch" : 10
+, "critic_outputs" : 1
+, "model" : {}
+}
