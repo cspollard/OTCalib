@@ -47,50 +47,42 @@ critic_layers = config["critic_layers"]
 
 def targetmodel(n):
   # target is
-  # 80% signal centered at 0, width of 0.5
-  # 20% background centered at 0.4, width 1
+  # 80% signal centered at 0, width of 0.25
+  # 20% background centered at 0.2, width 0.1
   nsig = int(n * 0.8)
-  sig = torch.randn((nsig,), device=device)*0.5
-  bkg = torch.randn((n - nsig,), device=device) + 0.4
+  sig = torch.randn((nsig,), device=device)*0.25 + 0.0
+  bkg = torch.randn((n - nsig,), device=device)*0.1 + 0.2
   return torch.cat([sig, bkg], dim=0).unsqueeze(1)
 
 
 def signalmodel(n):
-  # signal centered at 0.2, width 0.3
-  return torch.randn((n,), device=device).unsqueeze(1)*0.3 + 0.2
+  # signal centered at -0.3, width 0.4
+  return torch.randn((n,), device=device).unsqueeze(1)*0.4 - 0.3
 
 
 def backgroundmodel(n):
-  # background centered at 0.5, width 1
-  return torch.randn((n,), device=device).unsqueeze(1) + 0.5
+  # background centered at 0.2, width 0.1
+  return torch.randn((n,), device=device).unsqueeze(1)*0.1 + 0.2
 
 
 def prediction(scalar, thetas):
-  # theta[0] -> signal fraction
-  # theta[1] -> bkg center
+  # theta[0] -> signal center
+  # theta[1] -> signal width
   n = thetas.size()[0]
-  nom_sigfrac = 0.75
-  unc_sigfrac = 0.1
-  unc_bkgfrac = nom_sigfrac * unc_sigfrac / (1 - nom_sigfrac)
-  unc_bkgcenter = 0.2
+  sigfrac = 0.8
+  unc_sigcenter = 0.4
 
-  nsig = int(n * nom_sigfrac)
-  sig = signalmodel(nsig)
-  bkg = backgroundmodel(n - nsig) + unc_bkgcenter*thetas[nsig:,1:2]
+  nsig = int(n * sigfrac)
+  sig = signalmodel(nsig) + unc_sigcenter*thetas[:nsig,0:1]
+  bkg = backgroundmodel(n - nsig)
 
   sig.requires_grad = True
-
-  sigweights = 1 + unc_sigfrac*thetas[:nsig,0:1]
-  bkgweights = 1 + unc_bkgfrac*thetas[nsig:,0:1]
 
   if scalar is not None:
     vector = trans(scalar, sig, thetas[:nsig])
     sig = sig + vector
 
-  return \
-    ( torch.cat([sig, bkg], dim=0)
-    , torch.cat([sigweights, bkgweights], dim=0)
-    )
+  return torch.cat([sig, bkg], dim=0)
 
 
 def histcurve(bins, fills, default):
@@ -147,7 +139,7 @@ thisscalar[-1].weight.data *= 0.01
 thisscalar[-1].bias.data *= 0.01
 
 
-thiscritic = build_network([1] + critic_layers + [1])
+thiscritic = build_network([1+number_thetas] + critic_layers + [1])
 
 
 thisscalar.to(device)
@@ -163,16 +155,17 @@ def add_network_plot(network, name, writer, global_step, ylims):
   ax = fig.add_subplot(111)
 
   # prepare grid for the evaluation of the critic
-  xvals = np.linspace(-1.0, 1.0, 51, dtype = np.float32)
+  xvals = torch.from_numpy(np.linspace(-1.0, 1.0, 51, dtype = np.float32)).to(device).unsqueeze(1)
+  xvals.requires_grad = True
 
   # evaluate critic
-  yvals = detach(network(torch.from_numpy(xvals).to(device).unsqueeze(1)))
+  yvals = detach(network(xvals))
   yvals = np.reshape(yvals, xvals.shape)
 
   ax.set_xlim(-1, 1)
   ax.set_ylim(ylims[0], ylims[1])
   
-  plt.plot(xvals, yvals)
+  plt.plot(detach(xvals), yvals)
   
   writer.add_figure(name, fig, global_step = global_step)
 
@@ -184,66 +177,61 @@ def add_network_plot(network, name, writer, global_step, ylims):
 
 def plot_callback(scalar, critic, writer, global_step):
 
+  def nomcritic(xs):
+    thetas1 = torch.zeros((xs.size()[0], number_thetas), device=device)
+    return critic(torch.cat([xs, thetas1], dim=1))
 
-  add_network_plot(critic, "critic", writer, global_step, (-1, 1))
+  add_network_plot(nomcritic, "critic", writer, global_step, (-1, 1))
 
   def tmp(xs):
     thetas1 = torch.randn((xs.size()[0], number_thetas), device=device)
-    return scalar(torch.cat([xs, thetas1], dim=1))
+    return trans(scalar, xs, thetas1)
 
-  add_network_plot(tmp, "scalar", writer, global_step, (-1, 1))
+  add_network_plot(tmp, "random", writer, global_step, (-1, 1))
 
   def tmp(xs):
     thetas1 = torch.zeros((xs.size()[0], number_thetas), device=device)
-    return scalar(torch.cat([xs, thetas1], dim=1))
+    return trans(scalar, xs, thetas1)
 
   add_network_plot(tmp, "nominal", writer, global_step, (-1, 1))
 
   def tmp(xs):
     thetas1 = torch.zeros((xs.size()[0], number_thetas), device=device)
     thetas1[:,0] = 1
-    return scalar(torch.cat([xs, thetas1], dim=1))
+    return trans(scalar, xs, thetas1)
 
-  add_network_plot(tmp, "variation 1", writer, global_step, (-1, 1))
+  add_network_plot(tmp, "variation +1", writer, global_step, (-1, 1))
 
   def tmp(xs):
     thetas1 = torch.zeros((xs.size()[0], number_thetas), device=device)
-    thetas1[:,1] = 1
-    return scalar(torch.cat([xs, thetas1], dim=1))
+    thetas1[:,0] = -1
+    return trans(scalar, xs, thetas1)
 
-  add_network_plot(tmp, "variation 2", writer, global_step, (-1, 1))
+  add_network_plot(tmp, "variation -1", writer, global_step, (-1, 1))
 
   thetas = torch.zeros((number_samples_source, number_thetas), device=device)
   predorig = prediction(None, thetas)
 
   pred = prediction(scalar, thetas)
 
-  # draw the first two syst variations
+  # draw the syst variations
   thetas[:,0] = 1
   pred1 = prediction(scalar, thetas)
 
-  thetas[:,0] = 0
-  thetas[:,1] = 1
+  thetas[:,0] = -1
   pred2 = prediction(scalar, thetas)
 
 
   fig = plt.figure(figsize = (6, 6))
   hs, bins, _ = \
     plt.hist(
-      [ detach(predorig[0])
+      [ detach(predorig)
       , alltargetcpu
-      , detach(pred[0])
-      , detach(pred1[0])
-      , detach(pred2[0])
+      , detach(pred)
+      , detach(pred1)
+      , detach(pred2)
       ]
     , bins = np.linspace(-1, 1, 21)
-    # , weight = 
-    #   [ detach(predorig[1])
-    #   , np.ones_like(alltargetcpu)
-    #   , detach(pred[1])
-    #   , detach(pred1[1])
-    #   , detach(pred2[1])
-    #   ]
     )
 
   fig.clear()
@@ -298,7 +286,7 @@ def plot_callback(scalar, critic, writer, global_step):
     , htrans2
     , linewidth=2
     , color="red"
-    , label="transported prediction (variation 2)"
+    , label="transported prediction (variation -1)"
     , zorder=2
     )
 
@@ -338,21 +326,20 @@ for epoch in range(number_epochs):
 
       thetas = torch.randn((batch_size, number_thetas), device=device)
 
-
       scalar_optim.zero_grad()
       critic_optim.zero_grad()
 
-      pred, weights = prediction(thisscalar, thetas)
+      pred = prediction(thisscalar, thetas)
 
-      targetscore = thiscritic(target)
+      targetscore = thiscritic(torch.cat([target, thetas], dim=1))
       targetmeansum += torch.mean(targetscore).item()
 
-      transportedscore = thiscritic(pred)
+      transportedscore = thiscritic(torch.cat([pred, thetas], dim=1))
       transportedmeansum += torch.mean(transportedscore).item()
 
       transportedloss = \
         torch.nn.functional.binary_cross_entropy_with_logits(transportedscore,
-            torch.zeros_like(transportedscore), weight=weights, reduction="mean")
+            torch.zeros_like(transportedscore), reduction="mean")
 
       targetloss = \
         torch.nn.functional.binary_cross_entropy_with_logits(targetscore,
@@ -365,23 +352,19 @@ for epoch in range(number_epochs):
       critic_optim.step()
 
 
-    target = \
-      alltarget[torch.randint(number_samples_target, (batch_size,), device=device)]
-
     thetas = torch.randn((batch_size, number_thetas), device=device)
 
     scalar_optim.zero_grad()
     critic_optim.zero_grad()
 
-    pred, weights = prediction(thisscalar, thetas)
+    pred = prediction(thisscalar, thetas)
 
-    transportedscore = thiscritic(pred)
+    transportedscore = thiscritic(torch.cat([pred, thetas], dim=1))
 
     transloss = \
       torch.nn.functional.binary_cross_entropy_with_logits(
         transportedscore
       , torch.ones_like(transportedscore)
-      , weight=weights
       )
 
     transloss.backward()
@@ -394,6 +377,4 @@ for epoch in range(number_epochs):
 
 
   print("plotting.")
-  thetas = torch.zeros((number_samples_source, number_thetas), device=device)
-  # thetas = torch.zeros((number_samples_source, number_thetas), device=device)
   plot_callback(thisscalar, thiscritic, writer, epoch)
