@@ -32,7 +32,7 @@ batch_size = 250
 use_gradient = True
 
 # ds^2 = A^2 dr^2 + r^2 dphi^2
-A = 5
+A = 1
 eps = 1e-2
 
 # ---------------------------------------
@@ -279,11 +279,18 @@ def add_geodesic_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
         ax.scatter(geodesic[0][0], geodesic[0][1], color = color)
         ax.scatter(geodesic[-1][0], geodesic[-1][1], color = color)
         ax.plot(geodesic[:,0], geodesic[:,1], color = color)
-    
+
+        arrow_ind = int(len(geodesic) / 2)
+        ax.annotate('',
+                    xy = (geodesic[arrow_ind + 1][0], geodesic[arrow_ind + 1][1]),
+                    xytext = (geodesic[arrow_ind][0], geodesic[arrow_ind][1]),
+                    arrowprops = {'arrowstyle': '->', 'lw': 3, 'color': color},
+                    va = 'center')
+            
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    points = [[1.0, 0.0], [2.0, 0.0], [1.0, 1.0], [2.0, 1.0]]
+    points = [[1.0, -1.0], [3.0, -1.0], [1.0, 1.0], [3.0, 1.0]]
     colors = ["red", "green", "blue", "orange"]
 
     for point, color in zip(points, colors):
