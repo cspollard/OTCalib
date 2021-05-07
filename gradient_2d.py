@@ -16,18 +16,18 @@ outdir = "gradient_2d_manifold"
 number_samples_target = 5000
 number_samples_source = 20 * number_samples_target # MC
 
-# lr_transport = 7e-4
-# lr_critic = 3e-3
+lr_transport = 7e-4
+lr_critic = 3e-3
 
-lr_transport = 4e-4
-lr_critic = 2e-3
+# lr_transport = 4e-4
+# lr_critic = 2e-3
 
 # critic_updates_per_batch = 10
 critic_updates_per_batch = 20
 
 critic_outputs = 1
 
-batch_size = 512
+batch_size = 250
 #batch_size = 5
 use_gradient = True
 
@@ -58,18 +58,18 @@ def true_transport_potential_square(x, y):
     return 0.0 * x
 
 def generate_source_square(number_samples, device):
-    xvals = 2 * torch.rand((number_samples,), device = device) - 1
+    xvals = 2 * torch.rand((number_samples,), device = device) + 1
     yvals = 2 * torch.rand((number_samples,), device = device) - 1
     source = torch.stack([xvals, yvals], dim = 1)
     return source
 
 def generate_target_square(number_samples, device):
-    angle = np.pi / 4
+    angle = 0.0
     cosval = np.cos(angle)
     sinval = np.sin(angle)
     
     xvals = 2 * torch.rand((number_samples,), device = device) - 1
-    yvals = 2 * torch.rand((number_samples,), device = device) - 1
+    yvals = 2 * torch.rand((number_samples,), device = device) + 1
     target = torch.stack([cosval * xvals + sinval * yvals, cosval * yvals - sinval * xvals], dim = 1)
     return target
 
@@ -110,8 +110,8 @@ def add_source_plot(source_data, global_step):
 
     ax.hexbin(x = source_data[:, 0], y = source_data[:, 1], mincnt = 1)
 
-    ax.set_xlim(-2.5, 2.5)
-    ax.set_ylim(-2.5, 2.5)
+    ax.set_xlim(-3.5, 3.5)
+    ax.set_ylim(-3.5, 3.5)
 
     plt.tight_layout()
     writer.add_figure("source", fig, global_step = global_step)    
@@ -127,8 +127,8 @@ def add_target_plot(observed_data, transported_data, global_step, xlabel = "x", 
     scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red', alpha = 0.3)
     ax.legend([scatter], ["data"])
     
-    ax.set_xlim(-2.5, 2.5)
-    ax.set_ylim(-2.5, 2.5)
+    ax.set_xlim(-3.5, 3.5)
+    ax.set_ylim(-3.5, 3.5)
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -143,8 +143,8 @@ def add_network_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
     ax = fig.add_subplot(111)
 
     # prepare grid for the evaluation of the network
-    xvals = np.linspace(-2.0, 2.0, 50, dtype = np.float32)
-    yvals = np.linspace(-2.0, 2.0, 50, dtype = np.float32)
+    xvals = np.linspace(-3.5, 3.5, 50, dtype = np.float32)
+    yvals = np.linspace(-3.5, 3.5, 50, dtype = np.float32)
 
     xgrid, ygrid = np.meshgrid(xvals, yvals)
     vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
@@ -174,8 +174,8 @@ def add_transport_potential_comparison_plot_contours(true_potential, network, na
     ax = fig.add_subplot(111)
 
     # prepare grid for the evaluation of the network
-    xvals = np.linspace(-1.2, 1.2, 50, dtype = np.float32)
-    yvals = np.linspace(-1.2, 1.2, 50, dtype = np.float32)
+    xvals = np.linspace(-3.2, 3.2, 50, dtype = np.float32)
+    yvals = np.linspace(-3.2, 3.2, 50, dtype = np.float32)
 
     xgrid, ygrid = np.meshgrid(xvals, yvals)
     vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
@@ -251,8 +251,8 @@ def add_transport_vector_field_plot(network, name, global_step, xlabel = "x", yl
     ax = fig.add_subplot(111)
 
     # prepare grid for the evaluation of the network
-    xvals = np.linspace(-1.2, 1.2, 20, dtype = np.float32)
-    yvals = np.linspace(-1.2, 1.2, 20, dtype = np.float32)
+    xvals = np.linspace(-3.2, 3.2, 20, dtype = np.float32)
+    yvals = np.linspace(-3.2, 3.2, 20, dtype = np.float32)
 
     xgrid, ygrid = np.meshgrid(xvals, yvals)
     vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
@@ -270,6 +270,30 @@ def add_transport_vector_field_plot(network, name, global_step, xlabel = "x", yl
     ax.set_ylabel(ylabel)
     
     # plt.tight_layout()
+    writer.add_figure(name, fig, global_step = global_step)
+    plt.close()    
+
+def add_geodesic_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
+
+    def plot_geodesic(geodesic, ax, color = "black"):
+        ax.scatter(geodesic[0][0], geodesic[0][1], color = color)
+        ax.scatter(geodesic[-1][0], geodesic[-1][1], color = color)
+        ax.plot(geodesic[:,0], geodesic[:,1], color = color)
+    
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    points = [[1.0, 0.0], [2.0, 0.0], [1.0, 1.0], [2.0, 1.0]]
+    colors = ["red", "green", "blue", "orange"]
+
+    for point, color in zip(points, colors):
+        geodesic_tensor = generate_geodesic(transport_network, point)
+        geodesic = detach(geodesic_tensor)
+        plot_geodesic(geodesic, ax, color)
+
+    ax.set_xlim((-3.2, 3.2))
+    ax.set_ylim((-3.2, 3.2))
+
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()    
     
@@ -336,6 +360,40 @@ def compute_tangent_vector_x_y(network, source):
     vel = torch.cat([torch.unsqueeze(vel_x, dim = 1), torch.unsqueeze(vel_y, dim = 1)], dim = 1)
 
     return vel
+
+def generate_geodesic(network, source_point):
+
+    source_point = np.array([source_point], dtype = np.float32)
+    source_point_tensor = torch.from_numpy(source_point)
+    source_point_tensor.requires_grad = True
+    
+    # compute velocity tangent vector
+    vel_r, vel_phi, source_r, source_phi = compute_tangent_vector_r_phi(network, source_point_tensor)
+    
+    # norm of velocity tangent vector
+    vel_norm = torch.sqrt((A ** 2) * torch.square(vel_r) + torch.square(source_r * vel_phi)) + eps
+
+    # normalise velocity tangent vector
+    vel_r_norm = vel_r / vel_norm
+    vel_phi_norm = vel_phi / vel_norm
+
+    # compute constants that define the geodesic
+    L = vel_phi_norm * torch.square(source_r)
+    C1 = torch.sign(vel_r) * torch.sqrt(torch.square(source_r) - torch.square(L))
+    C2 = source_phi - A * torch.atan2(C1, L)
+    
+    s_vals = vel_norm * torch.linspace(0.0, 1.0, 50)
+    
+    # evaluate the geodesic at the right point
+    r_target = torch.sqrt(torch.square(L) + torch.square(C1 + s_vals / A))
+    phi_target = C2 + A * torch.atan2(A * C1 + s_vals, A * L)
+
+    x_target = r_target * torch.cos(phi_target)
+    y_target = r_target * torch.sin(phi_target)
+
+    target = torch.cat([torch.unsqueeze(x_target, dim = 1), torch.unsqueeze(y_target, dim = 1)], dim = 1)
+
+    return target
 
 def apply_transport(network, source):
     
@@ -491,20 +549,22 @@ for batch in range(50000):
     transport_optim.step()
 
     if not batch % 10:
-    
+        
         # ------------------------------
         # make diagnostic plots
         # ------------------------------
-        
+
         transported_data_nominal = detach(apply_transport(transport_network, source_data))
 
         add_network_plot(critic, name = "critic", global_step = batch)
         add_transport_vector_field_plot(transport_network, "transport_field", global_step = batch)
         
         if use_gradient:
+
+            add_geodesic_plot(transport_network, name = "geodesics", global_step = batch)
             add_network_plot(transport_network, name = "transport_potential", global_step = batch)
-            add_transport_potential_comparison_plot_contours(true_transport_potential, transport_network, name = "transport_potential_comparison_contours", global_step = batch)
-            add_transport_potential_comparison_plot_radial(true_transport_potential, transport_network, name = "transport_potential_comparison_radial", global_step = batch)
+            # add_transport_potential_comparison_plot_contours(true_transport_potential, transport_network, name = "transport_potential_comparison_contours", global_step = batch)
+            # add_transport_potential_comparison_plot_radial(true_transport_potential, transport_network, name = "transport_potential_comparison_radial", global_step = batch)
             
         add_source_plot(detach(source_data), global_step = batch)
         add_target_plot(observed_data = target_data, transported_data = transported_data_nominal, global_step = batch)
