@@ -11,7 +11,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 # where to run
 device = 'cpu'
-outdir = "gaussian_gradient_2d"
+outdir = "gradient_2d_manifold"
 
 number_samples_target = 2000
 number_samples_source = 20 * number_samples_target # MC
@@ -28,7 +28,12 @@ critic_updates_per_batch = 20
 critic_outputs = 1
 
 batch_size = 1024
+#batch_size = 5
 use_gradient = True
+
+# ds^2 = A^2 dr^2 + r^2 dphi^2
+A = 1
+eps = 1e-2
 
 # ---------------------------------------
 # utilities for now
@@ -39,7 +44,7 @@ def true_transport_potential_circle(x, y):
 
 def generate_source_circle(number_samples, device):
     angles = 2 * np.pi * torch.rand((number_samples,), device = device)
-    radii = torch.sqrt(torch.rand((number_samples,), device = device))
+    radii = torch.sqrt(torch.rand((number_samples,), device = device)) + eps
     source = torch.stack([radii * torch.cos(angles), radii * torch.sin(angles)], dim = 1)
     return source
 
@@ -256,8 +261,7 @@ def add_transport_vector_field_plot(network, name, global_step, xlabel = "x", yl
     vals_tensor = torch.from_numpy(vals)
     vals_tensor.requires_grad = True
     
-    transported_vals = apply_transport(network, vals_tensor)
-    transport_field_tensor = transported_vals - vals_tensor
+    transport_field_tensor = compute_tangent_vector_x_y(network, vals_tensor)
     transport_field = detach(transport_field_tensor)
     
     ax.quiver(vals[:,0], vals[:,1], transport_field[:,0], transport_field[:,1], color = 'black')
@@ -282,14 +286,107 @@ def build_fully_connected(number_inputs, number_outputs, number_hidden_layers, u
 def build_moments(inputs):
     return torch.cat((torch.mean(inputs, 0), torch.std(inputs, 0)), axis = 0)
 
-def apply_transport(network, source):
+def compute_tangent_vector_r_phi(network, source):
+
+    # print("apply_transport")
+    
+    source_x = source[:,0]
+    source_y = source[:,1]
+
+    # print("x = {}".format(source_x))
+    # print("y = {}".format(source_y))    
+
+    source_phi = torch.atan2(source_y, source_x)
+    source_r = torch.sqrt(torch.square(source_x) + torch.square(source_y))
+
+    # print("phi = {}".format(source_phi))
+    # print("r = {}".format(source_r))    
     
     output = network(source)
 
+    # print("phi = {}".format(output))
+    
     if use_gradient:
         output = torch.autograd.grad(output, source, grad_outputs = torch.ones_like(output), create_graph = True)[0]
+
+    grad_x = output[:,0]
+    grad_y = output[:,1]
+
+    # print("grad_x = {}".format(grad_x))
+    # print("grad_y = {}".format(grad_y))
     
-    return source + output
+    # r-component of tangent velocity
+    vel_r = 1.0 / (A ** 2) * (torch.cos(source_phi) * grad_x + torch.sin(source_phi) * grad_y)
+    vel_phi = 1.0 / source_r * (-torch.sin(source_phi) * grad_x + torch.cos(source_phi) * grad_y)
+
+    # print("vel_r = {}".format(vel_r))
+    # print("vel_phi = {}".format(vel_phi))
+    
+    return vel_r, vel_phi, source_r, source_phi
+
+def compute_tangent_vector_x_y(network, source):
+
+    # first compute r / phi components of tangent vector
+    vel_r, vel_phi, source_r, source_phi = compute_tangent_vector_r_phi(network, source)
+
+    # convert them into the x / y components
+    vel_x = torch.cos(source_phi) * vel_r - source_r * torch.sin(source_phi) * vel_phi
+    vel_y = torch.sin(source_phi) * vel_r + source_r * torch.cos(source_phi) * vel_phi
+    
+    vel = torch.cat([torch.unsqueeze(vel_x, dim = 1), torch.unsqueeze(vel_y, dim = 1)], dim = 1)
+
+    return vel
+
+def apply_transport(network, source):
+    
+    # compute velocity tangent vector
+    vel_r, vel_phi, source_r, source_phi = compute_tangent_vector_r_phi(network, source)
+
+    vel_xy = compute_tangent_vector_x_y(network, source)
+    
+    # norm of velocity tangent vector
+    vel_norm = torch.sqrt((A ** 2) * torch.square(vel_r) + torch.square(source_r * vel_phi)) + eps
+
+    # normalise velocity tangent vector
+    vel_r_norm = vel_r / vel_norm
+    vel_phi_norm = vel_phi / vel_norm
+
+    # compute constants that define the geodesic
+    L = vel_phi_norm * torch.square(source_r)
+    C1 = torch.sign(vel_r) * torch.sqrt(torch.square(source_r) - torch.square(L))
+    C2 = source_phi - A * torch.atan2(C1, L)
+
+    # evaluate the geodesic at the right point
+    r_target = torch.sqrt(torch.square(L) + torch.square(C1 + vel_norm / A))
+    phi_target = C2 + A * torch.atan2(A * C1 + vel_norm, A * L)
+
+    # print("r_source = {}".format(source_r))
+    # print("r_target = {}".format(r_target))
+
+    # print("phi_source = {}".format(source_phi))
+    # print("phi_target = {}".format(phi_target))
+    
+    x_target = r_target * torch.cos(phi_target)
+    y_target = r_target * torch.sin(phi_target)
+
+    # print("x_target = {}".format(x_target))
+    # print("y_target = {}".format(y_target))
+    
+    target = torch.cat([torch.unsqueeze(x_target, dim = 1), torch.unsqueeze(y_target, dim = 1)], dim = 1)
+
+    # print("source = {}".format(source))
+    # print("target = {}".format(target))
+
+    # target_alt = source + vel_xy
+
+    # diff = target - target_alt
+    # print("diff = {}".format(diff))
+
+    # if torch.any(torch.isnan(diff)):
+    #     import sys
+    #     sys.exit(1)
+    
+    return target
 
 # ---------------------------------------
 # this is where things happen
@@ -311,8 +408,8 @@ transport_network = build_fully_connected(2, number_outputs, number_hidden_layer
                                           activation = torch.nn.Tanh)
 
 
-# transport_network[-1].weight.data *= 0.01
-# transport_network[-1].bias.data *= 0.01
+transport_network[-1].weight.data *= 0.01
+transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
 critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
@@ -348,8 +445,11 @@ for batch in range(50000):
         
         critic_target = critic(target_data_batch)
         
-        transported_source_data_batch = apply_transport(transport_network, source_data_batch)        
+        transported_source_data_batch = apply_transport(transport_network, source_data_batch)
+        
         critic_transported_source = critic(transported_source_data_batch)
+
+        # vel_r, vel_phi = compute_tangent_vector_r_phi(transport_network, source_data_batch)
 
         if use_wasserstein:
             # Wasserstein loss for adversary
