@@ -13,26 +13,26 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 device = 'cpu'
 outdir = "gradient_2d_manifold"
 
-number_samples_target = 2000
+number_samples_target = 5000
 number_samples_source = 20 * number_samples_target # MC
 
-lr_transport = 7e-4
-lr_critic = 3e-3
+# lr_transport = 7e-4
+# lr_critic = 3e-3
 
-# lr_transport = 8e-4
-# lr_critic = 4e-3
+lr_transport = 4e-4
+lr_critic = 2e-3
 
 # critic_updates_per_batch = 10
 critic_updates_per_batch = 20
 
 critic_outputs = 1
 
-batch_size = 1024
+batch_size = 512
 #batch_size = 5
 use_gradient = True
 
 # ds^2 = A^2 dr^2 + r^2 dphi^2
-A = 1
+A = 5
 eps = 1e-2
 
 # ---------------------------------------
@@ -404,12 +404,12 @@ number_outputs = 1 if use_gradient else 2
 # transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 1, units_per_layer = 30,
 #                                           activation = torch.nn.Tanh)
 
-transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 1, units_per_layer = 30,
+transport_network = build_fully_connected(2, number_outputs, number_hidden_layers = 4, units_per_layer = 50,
                                           activation = torch.nn.Tanh)
 
 
-transport_network[-1].weight.data *= 0.01
-transport_network[-1].bias.data *= 0.01
+# transport_network[-1].weight.data *= 0.01
+# transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
 critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
