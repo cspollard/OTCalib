@@ -16,8 +16,8 @@ outdir = "gradient_2d_manifold"
 number_samples_target = 5000
 number_samples_source = 20 * number_samples_target # MC
 
-lr_transport = 7e-4
-lr_critic = 3e-3
+lr_transport = 1e-4
+lr_critic = 3e-4
 
 # lr_transport = 4e-4
 # lr_critic = 2e-3
@@ -32,7 +32,7 @@ batch_size = 250
 use_gradient = True
 
 # ds^2 = A^2 dr^2 + r^2 dphi^2
-A = 1
+A = 5
 eps = 1e-2
 
 # ---------------------------------------
@@ -58,18 +58,18 @@ def true_transport_potential_square(x, y):
     return 0.0 * x
 
 def generate_source_square(number_samples, device):
-    xvals = 2 * torch.rand((number_samples,), device = device) + 1
+    xvals = 2 * torch.rand((number_samples,), device = device) - 1
     yvals = 2 * torch.rand((number_samples,), device = device) - 1
     source = torch.stack([xvals, yvals], dim = 1)
     return source
 
 def generate_target_square(number_samples, device):
-    angle = 0.0
+    angle = np.pi / 4
     cosval = np.cos(angle)
     sinval = np.sin(angle)
     
     xvals = 2 * torch.rand((number_samples,), device = device) - 1
-    yvals = 2 * torch.rand((number_samples,), device = device) + 1
+    yvals = 2 * torch.rand((number_samples,), device = device) - 1
     target = torch.stack([cosval * xvals + sinval * yvals, cosval * yvals - sinval * xvals], dim = 1)
     return target
 
@@ -122,10 +122,10 @@ def add_target_plot(observed_data, transported_data, global_step, xlabel = "x", 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    datahist = ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1, cmap = "plasma")
-
     scatter = ax.scatter(x = observed_data[:, 0], y = observed_data[:, 1], marker = 'x', c = 'red', alpha = 0.3)
     ax.legend([scatter], ["data"])
+    
+    datahist = ax.hexbin(x = transported_data[:, 0], y = transported_data[:, 1], mincnt = 1, cmap = "plasma")
     
     ax.set_xlim(-3.5, 3.5)
     ax.set_ylim(-3.5, 3.5)
@@ -290,7 +290,7 @@ def add_geodesic_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    points = [[1.0, -1.0], [3.0, -1.0], [1.0, 1.0], [3.0, 1.0]]
+    points = [[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0]]
     colors = ["red", "green", "blue", "orange"]
 
     for point, color in zip(points, colors):
@@ -477,7 +477,7 @@ transport_network = build_fully_connected(2, number_outputs, number_hidden_layer
 # transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
-critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
+critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 4, units_per_layer = 50,
                                activation = torch.nn.Tanh)
 
 # critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
