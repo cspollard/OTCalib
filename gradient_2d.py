@@ -16,23 +16,26 @@ outdir = "gradient_2d_manifold"
 number_samples_target = 5000
 number_samples_source = 20 * number_samples_target # MC
 
-lr_transport = 1e-4
+lr_transport = 7e-5
 lr_critic = 3e-4
+
+# lr_transport = 7e-4
+# lr_critic = 3e-3
 
 # lr_transport = 4e-4
 # lr_critic = 2e-3
 
 # critic_updates_per_batch = 10
-critic_updates_per_batch = 20
+critic_updates_per_batch = 2
 
 critic_outputs = 1
 
-batch_size = 250
+batch_size = 1024
 #batch_size = 5
 use_gradient = True
 
 # ds^2 = A^2 dr^2 + r^2 dphi^2
-A = 5
+A = 1
 eps = 1e-2
 
 # ---------------------------------------
@@ -286,20 +289,38 @@ def add_geodesic_plot(network, name, global_step, xlabel = "x", ylabel = "y"):
                     xytext = (geodesic[arrow_ind][0], geodesic[arrow_ind][1]),
                     arrowprops = {'arrowstyle': '->', 'lw': 3, 'color': color},
                     va = 'center')
-            
+
+    def plot_transport_vector_field(ax):
+        xvals = np.linspace(-2, 2, 20, dtype = np.float32)
+        yvals = np.linspace(-2, 2, 20, dtype = np.float32)
+
+        xgrid, ygrid = np.meshgrid(xvals, yvals)
+        vals = np.stack([xgrid.flatten(), ygrid.flatten()], axis = 1)
+    
+        # compute transport field
+        vals_tensor = torch.from_numpy(vals)
+        vals_tensor.requires_grad = True
+    
+        transport_field_tensor = compute_tangent_vector_x_y(network, vals_tensor)
+        transport_field = detach(transport_field_tensor)
+    
+        ax.quiver(vals[:,0], vals[:,1], transport_field[:,0], transport_field[:,1], color = 'black')
+        
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    points = [[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0]]
-    colors = ["red", "green", "blue", "orange"]
+    points = [[0.2, 0.1], [0.4, 0.1], [0.6, 0.1], [0.8, 0.1], [1.0, 0.1], [1.5, 1.0]]
+    colors = ["red", "green", "blue", "orange", "black", "gray"]
 
+    plot_transport_vector_field(ax)
+    
     for point, color in zip(points, colors):
         geodesic_tensor = generate_geodesic(transport_network, point)
         geodesic = detach(geodesic_tensor)
         plot_geodesic(geodesic, ax, color)
 
-    ax.set_xlim((-3.2, 3.2))
-    ax.set_ylim((-3.2, 3.2))
+    ax.set_xlim((-2, 2))
+    ax.set_ylim((-2, 2))
 
     writer.add_figure(name, fig, global_step = global_step)
     plt.close()    
@@ -332,7 +353,7 @@ def compute_tangent_vector_r_phi(network, source):
 
     # print("phi = {}".format(source_phi))
     # print("r = {}".format(source_r))    
-    
+
     output = network(source)
 
     # print("phi = {}".format(output))
@@ -387,13 +408,13 @@ def generate_geodesic(network, source_point):
     # compute constants that define the geodesic
     L = vel_phi_norm * torch.square(source_r)
     C1 = torch.sign(vel_r) * torch.sqrt(torch.square(source_r) - torch.square(L))
-    C2 = source_phi - A * torch.atan2(C1, L)
+    C2 = source_phi - A * torch.atan(C1 / (L + eps))
     
     s_vals = vel_norm * torch.linspace(0.0, 1.0, 50)
     
     # evaluate the geodesic at the right point
     r_target = torch.sqrt(torch.square(L) + torch.square(C1 + s_vals / A))
-    phi_target = C2 + A * torch.atan2(A * C1 + s_vals, A * L)
+    phi_target = C2 + A * torch.atan((A * C1 + s_vals) / (A * L + eps))
 
     x_target = r_target * torch.cos(phi_target)
     y_target = r_target * torch.sin(phi_target)
@@ -406,8 +427,6 @@ def apply_transport(network, source):
     
     # compute velocity tangent vector
     vel_r, vel_phi, source_r, source_phi = compute_tangent_vector_r_phi(network, source)
-
-    vel_xy = compute_tangent_vector_x_y(network, source)
     
     # norm of velocity tangent vector
     vel_norm = torch.sqrt((A ** 2) * torch.square(vel_r) + torch.square(source_r * vel_phi)) + eps
@@ -477,7 +496,7 @@ transport_network = build_fully_connected(2, number_outputs, number_hidden_layer
 # transport_network[-1].bias.data *= 0.01
 transport_network.to(device)
 
-critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 4, units_per_layer = 50,
+critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 3, units_per_layer = 50,
                                activation = torch.nn.Tanh)
 
 # critic = build_fully_connected(2, critic_outputs, number_hidden_layers = 1, units_per_layer = 30,
@@ -489,9 +508,13 @@ critic.to(device)
 transport_optim = torch.optim.RMSprop(transport_network.parameters(), lr = lr_transport)
 adversary_optim = torch.optim.RMSprop(list(critic.parameters()), lr = lr_critic)
 
+def A_scheduler(batch_number):
+    return 1.0 + 2.0 / (1 + np.exp(-batch_number / 2000.0 + 4.0))
+
 for batch in range(50000):
 
-    print("step {}".format(batch))
+    A = A_scheduler(batch)
+    print("step {} with A = {}".format(batch, A))
     
     for cur_adversary_update in range(critic_updates_per_batch):
     
