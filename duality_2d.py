@@ -87,6 +87,16 @@ class ICNN(torch.nn.Module):
             for cur_param in cur_convex_op.parameters():
                 cur_param.data.copy_(torch.relu(cur_param.data))             
 
+    def get_convexity_regularisation_term(self):
+
+        L2_reg = 0.0
+        
+        for cur_convex_op in self.convex_ops:
+            for cur_param in cur_convex_op.parameters():
+                L2_reg += torch.sum(torch.square(torch.relu(-cur_param.data)))
+
+        return L2_reg
+                        
 # compute gradient d(obj)/d(var)
 def grad(obj, var):
     return torch.autograd.grad(obj, var, grad_outputs = torch.ones_like(obj), create_graph = True)[0]
@@ -251,10 +261,10 @@ for batch in range(50000):
         lag_g = torch.sum(grad_g * source_data_batch, keepdim = True, dim = 1) - f_func(grad_g)
         
         # need to maximise the lagrangian
-        loss_g = torch.mean(-lag_g)
+        loss_g = torch.mean(-lag_g + g_func.get_convexity_regularisation_term()) # can use a regulariser to keep it close to convexity ...
         loss_g.backward()
         g_func_optim.step()
-        g_func.enforce_convexity()
+        #g_func.enforce_convexity() # ... or enforce convexity explicitly
 
     f_func_optim.zero_grad()
         
