@@ -69,8 +69,9 @@ class ICNN(torch.nn.Module):
         self.Luy = torch.nn.ModuleList(Luy)
         self.Luutilde = torch.nn.ModuleList(Luutilde)
 
+        # the authors set the weights in the first layer to zero.
         for p in Wzz[0].parameters():
-            p.data = 0
+            p.data.copy_ = torch.zeros_like(p.data)
             p.requires_grad = False
 
 
@@ -81,12 +82,13 @@ class ICNN(torch.nn.Module):
         for i in range(self.nlayers):
             zi = \
               self.g[i](
-                  self.Wzz[i](zi * self.Luz[i](ui)) \
+                  self.Wzz[i](zi * torch.relu(self.Luz[i](ui))) \
                 + self.Wyz[i](ys * self.Luy[i](ui)) \
                 + self.Luz1[i](ui)
               )
 
-            if i < self.nlayers-1:
+            # no need to update ui the last time through.
+            if i < self.nlayers - 1:
                 ui = self.gtilde[i](self.Luutilde[i](ui))
 
         return zi

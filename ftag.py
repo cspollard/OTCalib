@@ -328,7 +328,7 @@ f_func = \
   ICNN(
       number_thetas
     , 1
-    , torch.nn.ReLU()
+    , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 32, 32]
     , [1, 32, 32, 1]
@@ -339,7 +339,7 @@ g_func = \
   ICNN(
       number_thetas
     , 1
-    , torch.nn.ReLU()
+    , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 32, 32]
     , [1, 32, 32, 1]
