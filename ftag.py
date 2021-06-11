@@ -301,8 +301,8 @@ f_func = \
     , 1
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 64]
-    , [1, 32, 1]
+    , [number_thetas, 16, 16]
+    , [1, 16, 16, 16, 1]
     )
 f_func.enforce_convexity()
 
@@ -312,8 +312,8 @@ g_func = \
     , 1
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 16]
-    , [1, 23, 1]
+    , [number_thetas, 16, 16]
+    , [1, 16, 16, 16, 1]
     )
 g_func.enforce_convexity()
 
