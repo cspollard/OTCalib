@@ -5,8 +5,6 @@ import numpy as np
 class ICNN(torch.nn.Module):
 
     def __init__(self
-        , number_nonconvex_inputs
-        , number_convex_inputs
         , nonconvex_activation
         , convex_activation
         , nonconvex_layersizes
@@ -17,10 +15,10 @@ class ICNN(torch.nn.Module):
 
         assert len(nonconvex_layersizes) + 1 == len(convex_layersizes)
 
-        self.nlayers = len(convex_layersizes) - 1
+        self.nhidden = len(convex_layersizes) - 1
 
-        self.g = [convex_activation for i in range(self.nlayers)]
-        self.gtilde = [nonconvex_activation for i in range(self.nlayers - 1)]
+        self.g = [convex_activation for i in range(self.nhidden)]
+        self.gtilde = [nonconvex_activation for i in range(self.nhidden - 1)]
 
 
         # simple matrix mul
@@ -29,7 +27,7 @@ class ICNN(torch.nn.Module):
 
         # and full linear layer with bias
         def L(x, y):
-            return torch.nn.Linear(x, y)
+            return torch.nn.Linear(x, y, bias=True)
 
 
         # more-or-less following the nomenclature from
@@ -51,14 +49,14 @@ class ICNN(torch.nn.Module):
         Luutilde = []
 
 
-        for lay in range(self.nlayers):
+        for lay in range(self.nhidden):
             Wzz.append(W(zsize[lay], zsize[lay+1]))
             Wyz.append(W(ysize, zsize[lay+1]))
             Luz.append(L(usize[lay], zsize[lay]))
             Luz1.append(L(usize[lay], zsize[lay+1]))
             Luy.append(L(usize[lay], ysize))
 
-        for lay in range(self.nlayers - 1):
+        for lay in range(self.nhidden - 1):
             Luutilde.append(L(usize[lay], usize[lay+1]))
 
 
@@ -79,7 +77,7 @@ class ICNN(torch.nn.Module):
         ui = xs
         zi = torch.zeros_like(ys)
 
-        for i in range(self.nlayers):
+        for i in range(self.nhidden):
             zi = \
               self.g[i](
                   self.Wzz[i](zi * torch.relu(self.Luz[i](ui))) \
@@ -88,7 +86,7 @@ class ICNN(torch.nn.Module):
               )
 
             # no need to update ui the last time through.
-            if i < self.nlayers - 1:
+            if i < self.nhidden - 1:
                 ui = self.gtilde[i](self.Luutilde[i](ui))
 
         return zi
@@ -117,4 +115,4 @@ class ICNN(torch.nn.Module):
 # NEED TO FIND SOMETHING MORE EFFICIENT HERE
 def smooth_leaky_ReLU(x, a):
     sqrtpi = np.sqrt(np.pi)
-    return 0.5 * ((a - 1) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))
+    return 0.5 * ((1 - a) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))

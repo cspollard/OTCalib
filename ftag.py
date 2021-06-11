@@ -326,9 +326,7 @@ activations = \
 
 f_func = \
   ICNN(
-      number_thetas
-    , 1
-    , functools.partial(smooth_leaky_ReLU, a = 0.2)
+      functools.partial(smooth_leaky_ReLU, a = 0.2)
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 32, 32]
     , [1, 32, 32, 1]
@@ -337,9 +335,7 @@ f_func.enforce_convexity()
 
 g_func = \
   ICNN(
-      number_thetas
-    , 1
-    , functools.partial(smooth_leaky_ReLU, a = 0.2)
+      functools.partial(smooth_leaky_ReLU, a = 0.2)
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 32, 32]
     , [1, 32, 32, 1]
