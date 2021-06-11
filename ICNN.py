@@ -4,50 +4,102 @@ import numpy as np
 # see details at https://arxiv.org/abs/1609.07152
 class ICNN(torch.nn.Module):
 
-    def __init__(self, number_inputs, number_hidden_layers, units_per_layer, activations):
+    def __init__(self
+        , number_nonconvex_inputs
+        , number_convex_inputs
+        , nonconvex_activation
+        , convex_activation
+        , nonconvex_layersizes
+        , convex_layersizes
+        ):
 
         super(ICNN, self).__init__()
+
+        assert len(nonconvex_layersizes) + 1 == len(convex_layersizes)
         
-        self.activations = activations
+        self.nlayers = len(convex_layersizes) - 1
         
-        # build all the operations
-        self.bypass_ops = torch.nn.ModuleList([torch.nn.Linear(number_inputs, units_per_layer, bias = True) for cur in range(number_hidden_layers - 1)])
-        self.bypass_ops += [torch.nn.Linear(number_inputs, 1, bias = True)] # the last one is special because it needs to produce a scalar output
-        
-        self.convex_ops = torch.nn.ModuleList([torch.nn.Linear(units_per_layer, units_per_layer, bias = False) for cur in range(number_hidden_layers - 2)])
-        self.convex_ops += [torch.nn.Linear(units_per_layer, 1, bias = False)]
+        self.g = [convex_activation for i in range(self.nlayers)]
+        self.gtilde = [nonconvex_activation for i in range(self.nlayers - 1)]
 
-    def forward(self, intensor):
 
-        outtensor = self.bypass_ops[0](intensor)
+        # simple matrix mul
+        def W(x, y):
+            return torch.nn.Linear(x, y, bias=False)
 
-        assert len(self.bypass_ops[1:]) == len(self.convex_ops)
-        assert len(self.convex_ops) == len(self.activations)
-        
-        for cur_bypass_op, cur_convex_op, cur_activation in zip(self.bypass_ops[1:], self.convex_ops, self.activations):
+        # and full linear layer with bias
+        def L(x, y):
+            return torch.nn.Linear(x, y)
 
-            # apply the activation to the output of the previous layer
-            outtensor = cur_activation(outtensor)            
 
-            # apply the next layer
-            outtensor = cur_convex_op(outtensor) + cur_bypass_op(intensor)
-            
-        return outtensor
+        # shorthand:
+        # zsize = convex layer sizes
+        # usize = nonconvex layer sizes
+        zsize = convex_layersizes
+        usize = nonconvex_layersizes
+        ysize = zsize[0]
+
+
+        Wzz = []
+        Wyz = []
+        Luz = []
+        Luz1 = []
+        Luy = []
+        Luutilde = []
+
+
+        for lay in range(self.nlayers):
+            Wzz.append(W(zsize[lay], zsize[lay+1]))
+            Wyz.append(W(ysize, zsize[lay+1]))
+            Luz.append(L(usize[lay], zsize[lay]))
+            Luz1.append(L(usize[lay], zsize[lay+1]))
+            Luy.append(L(usize[lay], ysize))
+
+        for lay in range(self.nlayers - 1):
+            Luutilde.append(L(usize[lay], usize[lay+1]))
+
+
+        self.Wzz = torch.nn.ModuleList(Wzz)
+        self.Wyz = torch.nn.ModuleList(Wyz)
+        self.Luz = torch.nn.ModuleList(Luz)
+        self.Luz1 = torch.nn.ModuleList(Luz1)
+        self.Luy = torch.nn.ModuleList(Luy)
+        self.Luutilde = torch.nn.ModuleList(Luutilde)
+
+
+    def forward(self, xs, ys):
+        ui = xs
+        zi = ys
+
+        for i in range(self.nlayers):
+            zi = \
+              self.g[i](
+                  self.Wzz[i](zi * self.Luz[i](ui)) \
+                + self.Wyz[i](ys * self.Luy[i](ui)) \
+                + self.Luz1[i](ui)
+              )
+
+            if i < self.nlayers-1:
+                ui = self.gtilde[i](self.Luutilde[i](ui))
+
+        return zi
+
 
     def enforce_convexity(self):
         
         # apply param = max(0, param) = relu(param) to all parameters that need to be nonnegative
-        for cur_convex_op in self.convex_ops:
-            for cur_param in cur_convex_op.parameters():
-                cur_param.data.copy_(torch.relu(cur_param.data))             
+        for W in self.Wzz:
+            for w in W.parameters():
+                w.data.copy_(torch.relu(w.data))             
+
 
     def get_convexity_regularisation_term(self):
 
         L2_reg = 0.0
         
-        for cur_convex_op in self.convex_ops:
-            for cur_param in cur_convex_op.parameters():
-                L2_reg += torch.sum(torch.square(torch.relu(-cur_param.data)))
+        for W in self.Wzz:
+            for w in W.parameters():
+                L2_reg += torch.sum(torch.square(torch.relu(-w.data)))
 
         return L2_reg
 

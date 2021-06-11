@@ -4,8 +4,8 @@
 , "number_samples_source" : 9999
 
 , "number_thetas" : 1
-, "batch_size" : 32
-, "epoch_size" : 1024
+, "batch_size" : 256
+, "epoch_size" : 256
 , "number_epochs" : 500
 
 , "lr_f" : 1e-4

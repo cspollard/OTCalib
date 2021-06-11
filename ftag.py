@@ -91,7 +91,7 @@ def prediction(thetas):
 
 
 def trans(scalar, pred, thetas):
-  vals = scalar(zipt(pred, thetas))
+  vals = scalar(thetas, pred)
   return grad(vals, pred)
 
 def histcurve(bins, fills, default):
@@ -295,13 +295,28 @@ alltargetcpu = detach(alltarget)
 activations = \
   [functools.partial(smooth_leaky_ReLU, a = 0), functools.partial(smooth_leaky_ReLU, a = 0.2)]
 
-f_func = ICNN(number_inputs = 1 + number_thetas, number_hidden_layers = 3,
-              units_per_layer = 16, activations = activations)
+f_func = \
+  ICNN(
+      number_thetas
+    , 1
+    , torch.nn.ReLU()
+    , functools.partial(smooth_leaky_ReLU, a = 0.2)
+    , [number_thetas, 64]
+    , [1, 32, 1]
+    )
 f_func.enforce_convexity()
 
-g_func = ICNN(number_inputs = 1 + number_thetas, number_hidden_layers = 3,
-              units_per_layer = 16, activations = activations)
+g_func = \
+  ICNN(
+      number_thetas
+    , 1
+    , torch.nn.ReLU()
+    , functools.partial(smooth_leaky_ReLU, a = 0.2)
+    , [number_thetas, 16]
+    , [1, 23, 1]
+    )
 g_func.enforce_convexity()
+
 
 # build the optimisers
 f_func_optim = torch.optim.RMSprop(f_func.parameters(), lr = lr_f)
@@ -329,7 +344,7 @@ for epoch in range(number_epochs):
     nsig = sig.size()[0]
     pred = cat(sig, bkg)
 
-    sig_vals = g_func(zipt(sig, of_length(thetas, sig)))
+    sig_vals = g_func(of_length(thetas, sig), sig)
     bkg_vals = 0.5 * bkg * bkg
 
     grad_g = cat(grad(sig_vals, sig), grad(bkg_vals, bkg))
@@ -338,7 +353,7 @@ for epoch in range(number_epochs):
     # print(source)
     lag_g = \
       torch.sum(grad_g * pred, keepdim = True, dim = 1) \
-      - f_func(zipt(grad_g, thetas))
+      - f_func(thetas, grad_g)
 
     # need to maximise the lagrangian
     loss_g = torch.mean(-lag_g + g_func.get_convexity_regularisation_term()) # can use a regulariser to keep it close to convexity ...
@@ -357,17 +372,17 @@ for epoch in range(number_epochs):
     nsig = sig.size()[0]
     pred = cat(sig, bkg)
 
-    sig_vals = g_func(zipt(sig, of_length(thetas, sig)))
+    sig_vals = g_func(of_length(thetas, sig), sig)
     bkg_vals = 0.5 * bkg * bkg
 
     grad_g = cat(grad(sig_vals, sig), grad(bkg_vals, bkg))
 
     lag_g = \
       torch.sum(grad_g * pred, keepdim = True, dim = 1) \
-      - f_func(zipt(grad_g, thetas))
+      - f_func(thetas, grad_g)
 
     # evaluate the lagrangian for f
-    lag_f = f_func(zipt(target, thetas))
+    lag_f = f_func(thetas, target)
 
     lag_total = lag_g + lag_f
     loss_total = torch.mean(lag_total)
