@@ -71,7 +71,7 @@ class ICNN(torch.nn.Module):
 
         # the authors set the weights in the first layer to zero.
         for p in Wzz[0].parameters():
-            p.data.copy_ = torch.zeros_like(p.data)
+            p.data.copy_(torch.zeros_like(p.data))
             p.requires_grad = False
 
 
