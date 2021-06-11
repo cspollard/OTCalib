@@ -274,9 +274,26 @@ def plot_callback(scalar, critic, writer, global_step):
   plt.ylim(0, max(htarget)*1.3)
 
   writer.add_figure("hist", fig, global_step=epoch)
+  fig.clear()
+  plt.close()
+  
+
+  # plot the g_func vs theta
+  thetas[:,0] = 0
+  xval = torch.sort(prednom, dim=0)[0]
+  yval = g_func(thetas, xval)
+
+  fig = plt.figure(figsize = (6, 6))
+  ax = fig.add_subplot(111)
+
+  ax.plot(detach(xval), detach(yval), color = "black", lw = 2, label = "g_func")
+
+  writer.add_figure("g_func", fig, global_step = global_step)
 
   fig.clear()
   plt.close()
+ 
+
 
 
 from time import gmtime, strftime
@@ -302,7 +319,7 @@ f_func = \
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 16, 16]
-    , [1, 16, 16, 16, 1]
+    , [1, 16, 16, 1]
     )
 f_func.enforce_convexity()
 
@@ -313,7 +330,7 @@ g_func = \
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
     , [number_thetas, 16, 16]
-    , [1, 16, 16, 16, 1]
+    , [1, 16, 16, 1]
     )
 g_func.enforce_convexity()
 
@@ -349,17 +366,15 @@ for epoch in range(number_epochs):
 
     grad_g = cat(grad(sig_vals, sig), grad(bkg_vals, bkg))
 
-    # print(grad_g)
-    # print(source)
     lag_g = \
       torch.sum(grad_g * pred, keepdim = True, dim = 1) \
       - f_func(thetas, grad_g)
 
     # need to maximise the lagrangian
-    loss_g = torch.mean(-lag_g + g_func.get_convexity_regularisation_term()) # can use a regulariser to keep it close to convexity ...
+    loss_g = torch.mean(-lag_g) # + g_func.get_convexity_regularisation_term()) # can use a regulariser to keep it close to convexity ...
     loss_g.backward()
     g_func_optim.step()
-    #g_func.enforce_convexity() # ... or enforce convexity explicitly
+    g_func.enforce_convexity() # ... or enforce convexity explicitly
 
 
     f_func_optim.zero_grad()
@@ -393,3 +408,6 @@ for epoch in range(number_epochs):
 
   print("plotting.")
   plot_callback(f_func, g_func, writer, epoch)
+
+  writer.add_scalar("g_func-L2reg", g_func.get_convexity_regularisation_term(), global_step=epoch)
+  writer.add_scalar("f_func-L2reg", f_func.get_convexity_regularisation_term(), global_step=epoch)

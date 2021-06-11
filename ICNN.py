@@ -109,4 +109,3 @@ class ICNN(torch.nn.Module):
 def smooth_leaky_ReLU(x, a):
     sqrtpi = np.sqrt(np.pi)
     return 0.5 * ((a - 1) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))
-
