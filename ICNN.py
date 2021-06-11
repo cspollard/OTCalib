@@ -16,9 +16,9 @@ class ICNN(torch.nn.Module):
         super(ICNN, self).__init__()
 
         assert len(nonconvex_layersizes) + 1 == len(convex_layersizes)
-        
+
         self.nlayers = len(convex_layersizes) - 1
-        
+
         self.g = [convex_activation for i in range(self.nlayers)]
         self.gtilde = [nonconvex_activation for i in range(self.nlayers - 1)]
 
@@ -31,6 +31,9 @@ class ICNN(torch.nn.Module):
         def L(x, y):
             return torch.nn.Linear(x, y)
 
+
+        # more-or-less following the nomenclature from
+        # arXiv:1609.07152
 
         # shorthand:
         # zsize = convex layer sizes
@@ -69,7 +72,7 @@ class ICNN(torch.nn.Module):
 
     def forward(self, xs, ys):
         ui = xs
-        zi = ys
+        zi = torch.zeros_like(ys)
 
         for i in range(self.nlayers):
             zi = \
@@ -86,17 +89,17 @@ class ICNN(torch.nn.Module):
 
 
     def enforce_convexity(self):
-        
+
         # apply param = max(0, param) = relu(param) to all parameters that need to be nonnegative
         for W in self.Wzz:
             for w in W.parameters():
-                w.data.copy_(torch.relu(w.data))             
+                w.data.copy_(torch.relu(w.data))
 
 
     def get_convexity_regularisation_term(self):
 
         L2_reg = 0.0
-        
+
         for W in self.Wzz:
             for w in W.parameters():
                 L2_reg += torch.sum(torch.square(torch.relu(-w.data)))

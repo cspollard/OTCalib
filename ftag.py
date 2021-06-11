@@ -278,15 +278,27 @@ def plot_callback(scalar, critic, writer, global_step):
   plt.close()
   
 
-  # plot the g_func vs theta
-  thetas[:,0] = 0
+  # plot the g_func vs prediction
   xval = torch.sort(prednom, dim=0)[0]
-  yval = g_func(thetas, xval)
+
+  def normalize(ys):
+    return ys - torch.mean(ys)
+
+  thetas[:,0] = 0
+  yvalnom = normalize(g_func(thetas, xval))
+
+  thetas[:,0] = 1
+  yvalup = normalize(g_func(thetas, xval))
+
+  thetas[:,0] = -1
+  yvaldown = normalize(g_func(thetas, xval))
 
   fig = plt.figure(figsize = (6, 6))
   ax = fig.add_subplot(111)
 
-  ax.plot(detach(xval), detach(yval), color = "black", lw = 2, label = "g_func")
+  ax.plot(detach(xval), detach(yvalnom), color = "black", lw = 2, label = "nominal")
+  ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "up")
+  ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "down")
 
   writer.add_figure("g_func", fig, global_step = global_step)
 
@@ -318,8 +330,8 @@ f_func = \
     , 1
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 16, 16]
-    , [1, 16, 16, 1]
+    , [number_thetas, 32, 32]
+    , [1, 32, 32, 1]
     )
 f_func.enforce_convexity()
 
@@ -329,8 +341,8 @@ g_func = \
     , 1
     , torch.nn.ReLU()
     , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 16, 16]
-    , [1, 16, 16, 1]
+    , [number_thetas, 32, 32]
+    , [1, 32, 32, 1]
     )
 g_func.enforce_convexity()
 
