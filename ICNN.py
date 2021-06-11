@@ -69,6 +69,10 @@ class ICNN(torch.nn.Module):
         self.Luy = torch.nn.ModuleList(Luy)
         self.Luutilde = torch.nn.ModuleList(Luutilde)
 
+        for p in Wzz[0].parameters():
+            p.data = 0
+            p.requires_grad = False
+
 
     def forward(self, xs, ys):
         ui = xs
