@@ -141,7 +141,6 @@ def poly(cs):
 # with b the slope below zero
 # and b1 the slope above one
 # a quadratic of the form b*x + (b1 - b)/2 * x*x interpolates between them
-from math import sqrt
 def quad_LReLU(b, b1):
     c = (b1 - b) / 2
     pospart = piecewise(1, poly([0, b, c]), poly([-c, b+2*c]))
