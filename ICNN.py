@@ -143,5 +143,5 @@ def poly(cs):
 # a quadratic of the form b*x + (b1 - b)/2 * x*x interpolates between them
 def quad_LReLU(b, b1):
     c = (b1 - b) / 2
-    pospart = piecewise(1, poly([0, b, c]), poly([-c, b+2*c]))
+    pospart = piecewise(1, poly([0, b, c]), poly([-c, b1]))
     return piecewise(0, poly([0, b]), pospart)
