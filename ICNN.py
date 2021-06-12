@@ -116,3 +116,33 @@ class ICNN(torch.nn.Module):
 def smooth_leaky_ReLU(x, a):
     sqrtpi = np.sqrt(np.pi)
     return 0.5 * ((1 - a) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))
+
+
+# a piecewise function x0 the changeover point from f to g
+def piecewise(x0, f, g):
+    def h(x):
+        return \
+            torch.heaviside(x0-x, torch.zeros_like(x))*f(x) \
+          + torch.heaviside(x-x0, torch.ones_like(x))*g(x)
+    return h
+
+
+# a polynomial of degree len(cs)-1 with cs as the coefficients
+def poly(cs):
+    def h(x):
+        tot = 0
+        for i in range(len(cs)):
+            tot += cs[i] * x**i
+        return tot
+    return h
+
+# a quadratically interpolated leaky relu function
+# with b the slope below zero
+# and b1 the slope above zero
+from math import sqrt
+def quad_LReLU(b, b1):
+    c = (b1 - b) / 2
+    pospart = piecewise(1, poly([0, b, c]), poly([-c, b+2*c]))
+    return piecewise(0, poly([0, b]), pospart)
+    # this is a * x below zero and a*x + b*x*x above zero
+    # return piecewise(0, partial(linear, a), partial(quad, a, b))

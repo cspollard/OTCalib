@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from time import time
 from sys import argv
-from ICNN import ICNN, smooth_leaky_ReLU
+from ICNN import ICNN, quad_LReLU
 
 print("torch version:", torch.__version__)
 
@@ -321,24 +321,21 @@ writer = SummaryWriter(runname)
 alltarget = targetmodel(number_samples_target)
 alltargetcpu = detach(alltarget)
 
-activations = \
-  [functools.partial(smooth_leaky_ReLU, a = 0), functools.partial(smooth_leaky_ReLU, a = 0.2)]
-
 f_func = \
   ICNN(
-      functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 32, 32]
-    , [1, 32, 32, 1]
+      quad_LReLU(0.01, 1)
+    , quad_LReLU(0.01, 1)
+    , [number_thetas, 8]
+    , [1, 8, 1]
     )
 f_func.enforce_convexity()
 
 g_func = \
   ICNN(
-      functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , functools.partial(smooth_leaky_ReLU, a = 0.2)
-    , [number_thetas, 32, 32]
-    , [1, 32, 32, 1]
+      quad_LReLU(0.01, 1)
+    , quad_LReLU(0.01, 1)
+    , [number_thetas, 8]
+    , [1, 8, 1]
     )
 g_func.enforce_convexity()
 

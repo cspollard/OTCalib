@@ -8,7 +8,7 @@
 , "epoch_size" : 256
 , "number_epochs" : 500
 
-, "lr_f" : 5e-4
-, "lr_g" : 5e-4
+, "lr_f" : 5e-3
+, "lr_g" : 5e-3
 , "model" : {}
 }
