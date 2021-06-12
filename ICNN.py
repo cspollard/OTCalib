@@ -136,9 +136,11 @@ def poly(cs):
         return tot
     return h
 
+
 # a quadratically interpolated leaky relu function
 # with b the slope below zero
 # and b1 the slope above zero
+# a quadratic of the form b*x + (b1 - b)/2 * x*x interpolates between t
 from math import sqrt
 def quad_LReLU(b, b1):
     c = (b1 - b) / 2
