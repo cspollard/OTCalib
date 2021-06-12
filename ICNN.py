@@ -145,5 +145,3 @@ def quad_LReLU(b, b1):
     c = (b1 - b) / 2
     pospart = piecewise(1, poly([0, b, c]), poly([-c, b+2*c]))
     return piecewise(0, poly([0, b]), pospart)
-    # this is a * x below zero and a*x + b*x*x above zero
-    # return piecewise(0, partial(linear, a), partial(quad, a, b))
