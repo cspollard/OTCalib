@@ -17,7 +17,10 @@ class ICNN(torch.nn.Module):
 
         self.nhidden = len(convex_layersizes) - 1
 
-        self.g = [convex_activation for i in range(self.nhidden)]
+        def id(x):
+            return x
+
+        self.g = [convex_activation for i in range(self.nhidden-1)] + [id]
         self.gtilde = [nonconvex_activation for i in range(self.nhidden - 1)]
 
 

@@ -3,12 +3,16 @@
 , "number_samples_target" : 9999
 , "number_samples_source" : 9999
 
-, "number_thetas" : 1
-, "batch_size" : 256
-, "epoch_size" : 256
-, "number_epochs" : 500
+, "f_convex_shape" : [1, 256, 256, 1]
+, "g_convex_shape" : [1, 256, 256, 1]
+, "f_nonconvex_shape" : [2, 256, 256]
+, "g_nonconvex_shape" : [2, 256, 256]
+, "batch_size" : 64
+, "epoch_size" : 64
+, "number_epochs" : 50000
 
-, "lr_f" : 5e-3
-, "lr_g" : 5e-3
+, "lr_f" : 1e-2
+, "lr_g" : 1e-2
 , "model" : {}
+, "f_per_g" : 1
 }
