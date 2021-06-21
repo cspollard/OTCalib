@@ -1,18 +1,18 @@
 { "outdir" : "ftag"
 , "device" : "cpu"
-, "number_samples_target" : 9999
-, "number_samples_source" : 9999
+, "number_samples_target" : 99999
+, "number_samples_source" : 99999
 
-, "f_convex_shape" : [1, 256, 256, 1]
-, "g_convex_shape" : [1, 256, 256, 1]
-, "f_nonconvex_shape" : [2, 256, 256]
-, "g_nonconvex_shape" : [2, 256, 256]
-, "batch_size" : 64
-, "epoch_size" : 64
+, "f_convex_shape" : [1, 16, 16, 16, 1]
+, "g_convex_shape" : [1, 16, 16, 16, 1]
+, "f_nonconvex_shape" : [2, 16, 16, 16]
+, "g_nonconvex_shape" : [2, 16, 16, 16]
+, "batch_size" : 1024
+, "epoch_size" : 512
 , "number_epochs" : 50000
 
-, "lr_f" : 1e-2
-, "lr_g" : 1e-2
+, "lr_f" : 1e-4
+, "lr_g" : 1e-4
 , "model" : {}
 , "f_per_g" : 1
 }

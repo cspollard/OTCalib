@@ -10,7 +10,6 @@ from ICNN import ICNN, quad_LReLU
 
 print("torch version:", torch.__version__)
 
-device="cpu"
 outprefix="ftag/"
 
 
@@ -65,16 +64,25 @@ def cat(xs, ys):
   return torch.cat([xs, ys], dim=0)
 
 
-sigcenter = 0.0
-sigwidth = 0.1
+sigcenter = 0.1
+sigwidth1 = 0.1
+sigwidth2 = 0.25
+sigfrac1 = 0.5
 bkgcenter = -0.5
-bkgwidth = 0.5
-sigfrac = 0.5
+bkgwidth = 1
+sigfrac = 0.25
+
 
 def targetmodel(n):
   nsig = int(n * sigfrac)
+  nsig1 = int(nsig * sigfrac1)
+  nsig2 = nsig - nsig1
 
-  sig = torch.randn((nsig, 1), device=device)*sigwidth + sigcenter
+  sig1 = torch.randn((nsig1, 1), device=device)*sigwidth1 + sigcenter
+  sig2 = torch.randn((nsig2, 1), device=device)*sigwidth2 + sigcenter
+
+  sig = cat(sig1, sig2)
+
   bkg = torch.randn((n - nsig, 1), device=device)*bkgwidth + bkgcenter
 
   sig.requires_grad = True
@@ -85,8 +93,9 @@ def targetmodel(n):
 
 def signalmodel(thetas):
   n = thetas.size()[0]
-  thissigcenter = sigcenter - 0.25 + 0.1*thetas[:,:1]
-  thissigwidth = sigwidth + torch.clamp(sigwidth + 0.05*thetas[:,1:], 0.05, 99999)
+  thissigcenter = - 0.5 + 0.1*thetas[:,:1]
+  thissigwidth = 0.1 + 0.1*thetas[:,1:2]
+  thissigwidth = torch.clamp(thissigwidth, 0.05, 99999)
   return torch.randn((n, 1), device=device)*thissigwidth + thissigcenter
 
 
@@ -142,6 +151,12 @@ def histcurve(bins, fills, default):
   return (xs, ys)
 
 
+def binned_kldiv(targ, pred):
+  htarg = np.histogram(targ, bins=100, range=(-1, 1), density=True)[0]
+  hpred = np.histogram(pred, bins=100, range=(-1, 1), density=True)[0]
+  return np.sum(htarg * np.log(htarg / hpred))
+
+
 def of_length(xs, ys):
   n = ys.size()[0]
   return xs[:n]
@@ -157,68 +172,46 @@ def detach(obj):
 
 
 
-def add_network_plot(network, name, writer, global_step, ylims):
-
-  fig = plt.figure(figsize = (6, 6))
-  ax = fig.add_subplot(111)
-
-  # prepare grid for the evaluation of the critic
-  xvals = torch.from_numpy(np.linspace(-1.0, 1.0, 51, dtype = np.float32)).to(device).unsqueeze(1)
-  xvals.requires_grad = True
-
-  # evaluate critic
-  yvals = detach(network(xvals))
-  yvals = np.reshape(yvals, xvals.shape)
-
-  ax.set_xlim(-1, 1)
-  ax.set_ylim(ylims[0], ylims[1])
-
-  plt.plot(detach(xvals), yvals)
-
-  writer.add_figure(name, fig, global_step = global_step)
-
-  fig.clear()
-  plt.close()
-
-
-# def add_histogram_comparison(targethist, name, writer, global_step):
-
 def plot_callback(g, writer, global_step):
-
   thetas = torch.zeros((number_samples_source, number_thetas), device=device)
   (sig, bkg) = prediction(thetas)
   prednom = cat(sig, bkg)
   transported = trans(g, sig, of_length(thetas, sig))
   transportednom = cat(transported, bkg)
-  g.zero_grad()
-
-  # get the syst variation for the first theta
-  thetas[:,0] = 1
-  (sig, bkg) = prediction(thetas)
-  predup = cat(sig, bkg)
-  transported = trans(g, sig, of_length(thetas, sig))
-  transportedup = cat(transported, bkg)
-  g.zero_grad()
-
-  thetas[:,0] = -1
-  (sig, bkg) = prediction(thetas)
-  preddown = cat(sig, bkg)
-  transported = trans(g, sig, of_length(thetas, sig))
-  transporteddown = cat(transported, bkg)
-  g.zero_grad()
-
-  fig = plt.figure(figsize = (6, 6))
 
   kdetarget = kde(alltarget)
   kdeprednom = kde(prednom)
-  kdepredup = kde(predup)
-  kdepreddown = kde(preddown)
   kdetransportednom = kde(transportednom)
-  kdetransportedup = kde(transportedup)
-  kdetransporteddown = kde(transporteddown)
+
+  writer.add_scalar("kldiv_nom", binned_kldiv(alltarget.detach(), transportednom.detach()), global_step=epoch)
+
+  for itheta in range(number_thetas):
+    thetas = torch.zeros((number_samples_source, number_thetas), device=device)
+
+    # get the syst variation for the first theta
+    thetas[:,itheta] = 1
+    (sig, bkg) = prediction(thetas)
+    predup = cat(sig, bkg)
+    transported = trans(g, sig, of_length(thetas, sig))
+    transportedup = cat(transported, bkg)
+
+    thetas[:,itheta] = -1
+    (sig, bkg) = prediction(thetas)
+    preddown = cat(sig, bkg)
+    transported = trans(g, sig, of_length(thetas, sig))
+    transporteddown = cat(transported, bkg)
+
+    writer.add_scalar("kldiv_up_theta%d" % itheta, binned_kldiv(alltarget.detach(), transportedup.detach()), global_step=epoch)
+    writer.add_scalar("kldiv_down_theta%d" % itheta, binned_kldiv(alltarget.detach(), transporteddown.detach()), global_step=epoch)
+
+    fig = plt.figure(figsize = (6, 6))
+
+    kdepredup = kde(predup)
+    kdepreddown = kde(preddown)
+    kdetransportedup = kde(transportedup)
+    kdetransporteddown = kde(transporteddown)
 
 
-  if number_dims == 1:
     xs = np.mgrid[-1:1:100j]
 
     plt.plot(
@@ -290,15 +283,24 @@ def plot_callback(g, writer, global_step):
       , zorder=3
       )
 
+    # plt.plot(
+    #     xs
+    #   , kdebkg(xs)
+    #   , label="background"
+    #   , color='gray'
+    #   , linewidth=1
+    #   , zorder=6
+    #   )
+
 
     fig.legend()
 
     plt.xlim(-1, 1)
     plt.xlabel("$x$")
-    plt.ylim(0, max(kdetarget(xs))*1.3)
+    plt.ylim(0, max(kdetarget(xs))*2)
     plt.ylabel("$p(x)$")
 
-    writer.add_figure("hist", fig, global_step=epoch)
+    writer.add_figure("pdf_theta%d" % itheta, fig, global_step=epoch)
     fig.clear()
     plt.close()
     
@@ -306,17 +308,14 @@ def plot_callback(g, writer, global_step):
     # plot the transport vs prediction
     xval = torch.sort(prednom, dim=0)[0]
 
-    thetas[:,0] = 0
+    thetas[:,itheta] = 0
     yvalnom = trans(g, xval, thetas)
-    g.zero_grad()
 
-    thetas[:,0] = 1
+    thetas[:,itheta] = 1
     yvalup = trans(g, xval, thetas)
-    g.zero_grad()
 
-    thetas[:,0] = -1
+    thetas[:,itheta] = -1
     yvaldown = trans(g, xval, thetas)
-    g.zero_grad()
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -327,12 +326,12 @@ def plot_callback(g, writer, global_step):
 
     fig.legend()
 
-    ax.set_xlim(-2, 2)
+    ax.set_xlim(-1, 1)
     plt.ylim(-1, 1)
     plt.xlabel("$x$")
     plt.ylabel("$x + \\Delta x$")
 
-    writer.add_figure("transport", fig, global_step = global_step)
+    writer.add_figure("transport_theta%d" % itheta, fig, global_step = global_step)
 
     fig.clear()
     plt.close()
@@ -341,15 +340,14 @@ def plot_callback(g, writer, global_step):
     # plot g vs prediction
     xval = torch.sort(prednom, dim=0)[0]
 
-    thetas[:,0] = 0
+    thetas[:,itheta] = 0
     yvalnom = g(thetas, xval)
 
-    thetas[:,0] = 1
+    thetas[:,itheta] = 1
     yvalup = g(thetas, xval)
 
-    thetas[:,0] = -1
+    thetas[:,itheta] = -1
     yvaldown = g(thetas, xval)
-    g.zero_grad()
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -364,15 +362,12 @@ def plot_callback(g, writer, global_step):
     plt.xlabel("$x$")
     plt.ylabel("$g(x)$")
 
-    writer.add_figure("g_func", fig, global_step = global_step)
+    writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
 
     fig.clear()
     plt.close()
   
-
-  elif number_dims == 2:
-    pass
-
+  return
 
 
 from time import gmtime, strftime
@@ -407,8 +402,8 @@ g_func.enforce_convexity()
 
 
 # build the optimisers
-f_func_optim = torch.optim.SGD(f_func.parameters(), lr = lr_f)
-g_func_optim = torch.optim.SGD(g_func.parameters(), lr = lr_g)
+f_func_optim = torch.optim.RMSprop(f_func.parameters(), lr = lr_f)
+g_func_optim = torch.optim.RMSprop(g_func.parameters(), lr = lr_g)
 
 
 f_func.to(device)
@@ -475,8 +470,8 @@ for epoch in range(number_epochs):
       - f_func(thetas, grad_g)
 
     # need to maximise the lagrangian
-    loss_g = torch.mean(-lag_g) + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
+    loss_g = torch.mean(-lag_g) # + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
     loss_g.backward()
     g_func_optim.step()
-    # g_func.enforce_convexity() # ... or enforce convexity explicitly
+    g_func.enforce_convexity() # ... or enforce convexity explicitly
 
