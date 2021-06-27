@@ -1,6 +1,17 @@
 import torch
 import numpy as np
 
+
+class Zero(torch.nn.Module):
+    def __init__(self, outsize):
+        super(Zero, self).__init__()
+
+        self.outsize = outsize
+        return
+
+    def forward(self, xs):
+        return torch.zeros([xs.size()[0]] + self.outsize)
+
 # see details at https://arxiv.org/abs/1609.07152
 class ICNN(torch.nn.Module):
 
@@ -30,7 +41,10 @@ class ICNN(torch.nn.Module):
 
         # and full linear layer with bias
         def L(x, y):
-            return torch.nn.Linear(x, y, bias=True)
+            if x == 0:
+                return Zero([y])
+            else:
+                return torch.nn.Linear(x, y, bias=True)
 
 
         # more-or-less following the nomenclature from
@@ -116,9 +130,12 @@ class ICNN(torch.nn.Module):
 
 # need a smooth version to make sure the transport potential has a smooth gradient
 # NEED TO FIND SOMETHING MORE EFFICIENT HERE
-def smooth_leaky_ReLU(x, a):
+def smooth_leaky_ReLU(a):
     sqrtpi = np.sqrt(np.pi)
-    return 0.5 * ((1 - a) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))
+    def f(x):
+        return 0.5 * ((1 - a) * torch.exp(-torch.square(x)) + sqrtpi * x * (1 + torch.erf(x) + a * torch.erfc(x)))
+
+    return f
 
 
 # a piecewise function x0 the changeover point from f to g

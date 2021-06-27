@@ -1,3 +1,6 @@
+# TODO
+# change back to histograms
+
 import functools
 
 import torch
@@ -6,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from time import time
 from sys import argv
-from ICNN import ICNN, quad_LReLU
+from ICNN import ICNN, quad_LReLU, smooth_leaky_ReLU
 
 print("torch version:", torch.__version__)
 
@@ -48,7 +51,11 @@ assert len(f_convex_shape) > 0 and len(g_convex_shape) > 0
 assert f_convex_shape[0] == g_convex_shape[0]
 
 number_dims = f_convex_shape[0]
-number_thetas = f_nonconvex_shape[0]
+number_thetas = f_convex_shape[0]
+
+# the number of nps needed to maket his module run.
+# any nps that aren't input to the networks will be set to zero.
+number_nps = 2
 
 batch_size = config["batch_size"]
 epoch_size = config["epoch_size"]
@@ -151,6 +158,121 @@ def histcurve(bins, fills, default):
   return (xs, ys)
 
 
+def plot_hist(name, epoch, target, pred, predm1, predp1, trans, transm1, transp1):
+      bins = [-1 + x*0.05 for x in range(41)]
+
+      fig = plt.figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
+
+      hs, bins, _ = \
+        ax.hist(
+          [ target
+          , pred
+          , predm1
+          , predp1
+          , trans
+          , transm1
+          , transp1
+          ]
+
+        , bins=bins
+        , density=False
+        )
+
+      (xs, htarget) = histcurve(bins, hs[0], 0)
+      (xs, hprednom) = histcurve(bins, hs[1], 0)
+      (xs, hpredup) = histcurve(bins, hs[2], 0)
+      (xs, hpreddown) = histcurve(bins, hs[3], 0)
+      (xs, htransnom) = histcurve(bins, hs[4], 0)
+      (xs, htransup) = histcurve(bins, hs[5], 0)
+      (xs, htransdown) = histcurve(bins, hs[6], 0)
+
+      fig.clear()
+      
+      plt.scatter(
+          (bins[:-1] + bins[1:]) / 2.0
+        , hs[0]
+        , label="target"
+        , color='black'
+        , linewidth=0
+        , marker='o'
+        , zorder=5
+        )
+
+      plt.plot(
+          xs
+        , hprednom
+        , color='red'
+        , linewidth=2
+        , linestyle="dotted"
+        , label="original prediction (nominal)"
+        , zorder=3
+        )
+
+      plt.plot(
+          xs
+        , hpredup
+        , linewidth=2
+        , color="blue"
+        , linestyle="dotted"
+        , label="original prediction (up)"
+        , zorder=3
+        )
+
+      plt.plot(
+          xs
+        , hpreddown
+        , linewidth=2
+        , color="green"
+        , linestyle="dotted"
+        , label="original prediction (down)"
+        , zorder=3
+        )
+
+      plt.plot(
+          xs
+        , htransnom
+        , linewidth=2
+        , color="red"
+        , linestyle="solid"
+        , label="transported prediction (nominal)"
+        , zorder=3
+        )
+
+      plt.plot(
+          xs
+        , htransup
+        , linewidth=2
+        , color="blue"
+        , linestyle="solid"
+        , label="transported prediction (up)"
+        , zorder=3
+        )
+
+      plt.plot(
+          xs
+        , htransdown
+        , linewidth=2
+        , color="green"
+        , linestyle="solid"
+        , label="transported prediction (down)"
+        , zorder=3
+        )
+
+      fig.legend()
+
+      plt.xlim(-1, 1)
+      plt.xlabel("$x$")
+      plt.ylim(0, max(htarget)*2)
+      plt.ylabel("$p(x)$")
+
+      writer.add_figure(name, fig, global_step=epoch)
+
+      fig.clear()
+      plt.close()
+
+      return
+
 def binned_kldiv(targ, pred):
   htarg = np.histogram(targ, bins=100, range=(-1, 1), density=True)[0]
   hpred = np.histogram(pred, bins=100, range=(-1, 1), density=True)[0]
@@ -170,10 +292,18 @@ def zipt(xs, ys):
 def detach(obj):
   return obj.squeeze().cpu().detach().numpy()
 
+def get_thetas(n):
+  thetas = torch.zeros((n, number_nps), device=device)
+  for i in range(number_nps):
+    if i >= number_thetas:
+      thetas[:,i] = 0
+
+  return thetas
 
 
-def plot_callback(g, writer, global_step):
-  thetas = torch.zeros((number_samples_source, number_thetas), device=device)
+def plot_callback(g, writer, global_step, outfolder=None):
+  thetas = get_thetas(number_samples_source)
+
   (sig, bkg) = prediction(thetas)
   prednom = cat(sig, bkg)
   transported = trans(g, sig, of_length(thetas, sig))
@@ -185,8 +315,8 @@ def plot_callback(g, writer, global_step):
 
   writer.add_scalar("kldiv_nom", binned_kldiv(alltarget.detach(), transportednom.detach()), global_step=epoch)
 
-  for itheta in range(number_thetas):
-    thetas = torch.zeros((number_samples_source, number_thetas), device=device)
+  for itheta in range(number_nps):
+    thetas = get_thetas(number_samples_source)
 
     # get the syst variation for the first theta
     thetas[:,itheta] = 1
@@ -203,6 +333,18 @@ def plot_callback(g, writer, global_step):
 
     writer.add_scalar("kldiv_up_theta%d" % itheta, binned_kldiv(alltarget.detach(), transportedup.detach()), global_step=epoch)
     writer.add_scalar("kldiv_down_theta%d" % itheta, binned_kldiv(alltarget.detach(), transporteddown.detach()), global_step=epoch)
+
+    plot_hist(
+        "hist_theta%d" % itheta
+      , epoch
+      , alltarget.detach().squeeze().numpy()
+      , prednom.detach().squeeze().numpy()
+      , predup.detach().squeeze().numpy()
+      , preddown.detach().squeeze().numpy()
+      , transportednom.detach().squeeze().numpy()
+      , transportedup.detach().squeeze().numpy()
+      , transporteddown.detach().squeeze().numpy()
+      )
 
     fig = plt.figure(figsize = (6, 6))
 
@@ -300,7 +442,11 @@ def plot_callback(g, writer, global_step):
     plt.ylim(0, max(kdetarget(xs))*2)
     plt.ylabel("$p(x)$")
 
+    if outfolder is not None:
+      plt.savefig(outfolder + "/pdf_theta%d.pdf" % itheta)
+
     writer.add_figure("pdf_theta%d" % itheta, fig, global_step=epoch)
+
     fig.clear()
     plt.close()
     
@@ -326,10 +472,13 @@ def plot_callback(g, writer, global_step):
 
     fig.legend()
 
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1, 0)
     plt.ylim(-1, 1)
     plt.xlabel("$x$")
-    plt.ylabel("$x + \\Delta x$")
+    plt.ylabel("$T x$")
+
+    if outfolder is not None:
+      plt.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
 
     writer.add_figure("transport_theta%d" % itheta, fig, global_step = global_step)
 
@@ -362,6 +511,9 @@ def plot_callback(g, writer, global_step):
     plt.xlabel("$x$")
     plt.ylabel("$g(x)$")
 
+    if outfolder is not None:
+      plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
+
     writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
 
     fig.clear()
@@ -384,8 +536,10 @@ alltarget = targetmodel(number_samples_target)
 
 f_func = \
   ICNN(
-      quad_LReLU(0.1, 1)
-    , quad_LReLU(0.1, 1)
+    #   quad_LReLU(0.1, 1)
+    # , quad_LReLU(0.1, 1)
+      smooth_leaky_ReLU(0.1)
+    , smooth_leaky_ReLU(0.1)
     , f_nonconvex_shape
     , f_convex_shape
     )
@@ -393,8 +547,10 @@ f_func.enforce_convexity()
 
 g_func = \
   ICNN(
-      quad_LReLU(0.1, 1)
-    , quad_LReLU(0.1, 1)
+    #   quad_LReLU(0.1, 1)
+    # , quad_LReLU(0.1, 1)
+      smooth_leaky_ReLU(0.1)
+    , smooth_leaky_ReLU(0.1)
     , g_nonconvex_shape
     , g_convex_shape
     )
@@ -410,10 +566,11 @@ f_func.to(device)
 g_func.to(device)
 
 
+os.mkdir(runname + ".plots")
 for epoch in range(number_epochs):
 
   print("plotting.")
-  plot_callback(g_func, writer, epoch)
+  plot_callback(g_func, writer, epoch, outfolder = runname + ".plots")
 
   writer.add_scalar("g_func-L2reg", g_func.get_convexity_regularisation_term(), global_step=epoch)
   writer.add_scalar("f_func-L2reg", f_func.get_convexity_regularisation_term(), global_step=epoch)
@@ -426,7 +583,7 @@ for epoch in range(number_epochs):
 
       target = targetmodel(batch_size)
 
-      thetas = torch.randn((batch_size, number_thetas), device=device)
+      thetas = get_thetas(batch_size)
 
       (sig, bkg) = prediction(thetas)
       nsig = sig.size()[0]
@@ -454,7 +611,7 @@ for epoch in range(number_epochs):
 
     g_func.zero_grad()
 
-    thetas = torch.randn((batch_size, number_thetas), device=device)
+    thetas = get_thetas(batch_size)
 
     (sig, bkg) = prediction(thetas)
     nsig = sig.size()[0]
