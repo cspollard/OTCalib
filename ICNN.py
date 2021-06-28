@@ -2,15 +2,15 @@ import torch
 import numpy as np
 
 
-class Zero(torch.nn.Module):
+class One(torch.nn.Module):
     def __init__(self, outsize):
-        super(Zero, self).__init__()
+        super(One, self).__init__()
 
         self.outsize = outsize
         return
 
     def forward(self, xs):
-        return torch.zeros([xs.size()[0]] + self.outsize)
+        return torch.ones([xs.size()[0]] + self.outsize)
 
 # see details at https://arxiv.org/abs/1609.07152
 class ICNN(torch.nn.Module):
@@ -31,7 +31,7 @@ class ICNN(torch.nn.Module):
         def id(x):
             return x
 
-        self.g = [convex_activation for i in range(self.nhidden-1)] + [id]
+        self.g = [convex_activation for i in range(self.nhidden)]
         self.gtilde = [nonconvex_activation for i in range(self.nhidden - 1)]
 
 
@@ -42,7 +42,7 @@ class ICNN(torch.nn.Module):
         # and full linear layer with bias
         def L(x, y):
             if x == 0:
-                return Zero([y])
+                return One([y])
             else:
                 return torch.nn.Linear(x, y, bias=True)
 
@@ -84,10 +84,19 @@ class ICNN(torch.nn.Module):
         self.Luy = torch.nn.ModuleList(Luy)
         self.Luutilde = torch.nn.ModuleList(Luutilde)
 
+        # for p in self.parameters():
+        #     p.data.copy_(torch.randn_like(p.data) / p.data.nelement())
+
+        for wzz in Wzz:
+            for p in wzz.parameters():
+                p.data.copy_(p.data.abs())
+
         # the authors set the weights in the first layer to zero.
         for p in Wzz[0].parameters():
             p.data.copy_(torch.zeros_like(p.data))
             p.requires_grad = False
+
+
 
 
     def forward(self, xs, ys):
@@ -102,8 +111,8 @@ class ICNN(torch.nn.Module):
                 + self.Luz1[i](ui)
               )
 
-            # no need to update ui the last time through.
             if i < self.nhidden - 1:
+                # no need to update ui the last time through.
                 ui = self.gtilde[i](self.Luutilde[i](ui))
 
         return zi
@@ -161,7 +170,18 @@ def poly(cs):
 # with b the slope below zero
 # and b1 the slope above one
 # a quadratic of the form b*x + (b1 - b)/2 * x*x interpolates between them
-def quad_LReLU(b, b1):
-    c = (b1 - b) / 2
-    pospart = piecewise(1, poly([0, b, c]), poly([-c, b1]))
-    return piecewise(0, poly([0, b]), pospart)
+def quad_LReLU(m0, m1):
+    a = 0
+    b = m0
+    c = (m1 - m0) / 2
+    pospart = piecewise(1, poly([a, b, c]), poly([-c, m1]))
+    return piecewise(0, poly([0, m0]), pospart)
+
+
+def cube_LReLU(m0, m1):
+    a = 0
+    b = m0
+    c = 3 - 2*m0 - m1
+    d = m0 + m1 - 2
+    pospart = piecewise(1, poly([a, b, c, d]), poly([1 - m1, m1]))
+    return piecewise(0, poly([0, m0]), pospart)

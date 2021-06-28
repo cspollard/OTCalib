@@ -21,8 +21,6 @@ import shutil
 import json
 
 
-from scipy.stats import gaussian_kde
-
 if len(argv) < 2:
   print("please provide a json steering file")
   exit(-1)
@@ -51,7 +49,7 @@ assert len(f_convex_shape) > 0 and len(g_convex_shape) > 0
 assert f_convex_shape[0] == g_convex_shape[0]
 
 number_dims = f_convex_shape[0]
-number_thetas = f_convex_shape[0]
+number_thetas = f_nonconvex_shape[0]
 
 # the number of nps needed to maket his module run.
 # any nps that aren't input to the networks will be set to zero.
@@ -74,10 +72,10 @@ def cat(xs, ys):
 sigcenter = 0.1
 sigwidth1 = 0.1
 sigwidth2 = 0.25
-sigfrac1 = 0.5
+sigfrac1 = 0.0
 bkgcenter = -0.5
 bkgwidth = 1
-sigfrac = 0.25
+sigfrac = 1
 
 
 def targetmodel(n):
@@ -143,10 +141,6 @@ def trans(scalar, pred, thetas):
   return grad(vals, pred)
 
 
-def kde(xs):
-  return gaussian_kde(detach(xs))
-
-
 def grid(ranges):
   return np.mgrid(ranges)
 
@@ -158,34 +152,29 @@ def histcurve(bins, fills, default):
   return (xs, ys)
 
 
-def plot_hist(name, epoch, target, pred, predm1, predp1, trans, transm1, transp1):
+def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm1=None, transp1=None):
       bins = [-1 + x*0.05 for x in range(41)]
 
       fig = plt.figure(figsize=(6, 6))
       ax = fig.add_subplot(111)
 
-      hs, bins, _ = \
-        ax.hist(
-          [ target
-          , pred
-          , predm1
-          , predp1
-          , trans
-          , transm1
-          , transp1
-          ]
+      if any(x is None for x in [predm1, predp1, transm1, transp1]):
+        variations = False
+        hists = [ target , pred , trans ]
+      else:
+        variations = True
+        hists = [ target , pred , trans , predm1 , predp1 , transm1 , transp1 ]
 
-        , bins=bins
-        , density=False
-        )
+      hs, bins, _ = ax.hist( hists , bins=bins , density=False)
 
       (xs, htarget) = histcurve(bins, hs[0], 0)
       (xs, hprednom) = histcurve(bins, hs[1], 0)
-      (xs, hpredup) = histcurve(bins, hs[2], 0)
-      (xs, hpreddown) = histcurve(bins, hs[3], 0)
-      (xs, htransnom) = histcurve(bins, hs[4], 0)
-      (xs, htransup) = histcurve(bins, hs[5], 0)
-      (xs, htransdown) = histcurve(bins, hs[6], 0)
+      (xs, htransnom) = histcurve(bins, hs[2], 0)
+      if variations:
+        (xs, hpredup) = histcurve(bins, hs[3], 0)
+        (xs, hpreddown) = histcurve(bins, hs[4], 0)
+        (xs, htransup) = histcurve(bins, hs[5], 0)
+        (xs, htransdown) = histcurve(bins, hs[6], 0)
 
       fig.clear()
       
@@ -205,27 +194,7 @@ def plot_hist(name, epoch, target, pred, predm1, predp1, trans, transm1, transp1
         , color='red'
         , linewidth=2
         , linestyle="dotted"
-        , label="original prediction (nominal)"
-        , zorder=3
-        )
-
-      plt.plot(
-          xs
-        , hpredup
-        , linewidth=2
-        , color="blue"
-        , linestyle="dotted"
-        , label="original prediction (up)"
-        , zorder=3
-        )
-
-      plt.plot(
-          xs
-        , hpreddown
-        , linewidth=2
-        , color="green"
-        , linestyle="dotted"
-        , label="original prediction (down)"
+        , label="original prediction" + (" (nominal)" if variations else "")
         , zorder=3
         )
 
@@ -235,43 +204,60 @@ def plot_hist(name, epoch, target, pred, predm1, predp1, trans, transm1, transp1
         , linewidth=2
         , color="red"
         , linestyle="solid"
-        , label="transported prediction (nominal)"
+        , label="transported prediction" + (" (nominal)" if variations else "")
         , zorder=3
         )
 
-      plt.plot(
-          xs
-        , htransup
-        , linewidth=2
-        , color="blue"
-        , linestyle="solid"
-        , label="transported prediction (up)"
-        , zorder=3
-        )
+      if variations:
+        plt.plot(
+            xs
+          , hpredup
+          , linewidth=2
+          , color="blue"
+          , linestyle="dotted"
+          , label="original prediction (up)"
+          , zorder=3
+          )
 
-      plt.plot(
-          xs
-        , htransdown
-        , linewidth=2
-        , color="green"
-        , linestyle="solid"
-        , label="transported prediction (down)"
-        , zorder=3
-        )
+        plt.plot(
+            xs
+          , hpreddown
+          , linewidth=2
+          , color="green"
+          , linestyle="dotted"
+          , label="original prediction (down)"
+          , zorder=3
+          )
+
+        plt.plot(
+            xs
+          , htransup
+          , linewidth=2
+          , color="blue"
+          , linestyle="solid"
+          , label="transported prediction (up)"
+          , zorder=3
+          )
+
+        plt.plot(
+            xs
+          , htransdown
+          , linewidth=2
+          , color="green"
+          , linestyle="solid"
+          , label="transported prediction (down)"
+          , zorder=3
+          )
 
       fig.legend()
 
       plt.xlim(-1, 1)
       plt.xlabel("$x$")
       plt.ylim(0, max(htarget)*2)
-      plt.ylabel("$p(x)$")
+      plt.ylabel("$counts\\, /\\, bin$")
 
-      writer.add_figure(name, fig, global_step=epoch)
+      return fig
 
-      fig.clear()
-      plt.close()
-
-      return
 
 def binned_kldiv(targ, pred):
   htarg = np.histogram(targ, bins=100, range=(-1, 1), density=True)[0]
@@ -301,7 +287,7 @@ def get_thetas(n):
   return thetas
 
 
-def plot_callback(g, writer, global_step, outfolder=None):
+def plot_callback(f, g, writer, global_step, outfolder=None):
   thetas = get_thetas(number_samples_source)
 
   (sig, bkg) = prediction(thetas)
@@ -309,201 +295,59 @@ def plot_callback(g, writer, global_step, outfolder=None):
   transported = trans(g, sig, of_length(thetas, sig))
   transportednom = cat(transported, bkg)
 
-  kdetarget = kde(alltarget)
-  kdeprednom = kde(prednom)
-  kdetransportednom = kde(transportednom)
-
   writer.add_scalar("kldiv_nom", binned_kldiv(alltarget.detach(), transportednom.detach()), global_step=epoch)
 
-  for itheta in range(number_nps):
-    thetas = get_thetas(number_samples_source)
 
-    # get the syst variation for the first theta
-    thetas[:,itheta] = 1
-    (sig, bkg) = prediction(thetas)
-    predup = cat(sig, bkg)
-    transported = trans(g, sig, of_length(thetas, sig))
-    transportedup = cat(transported, bkg)
-
-    thetas[:,itheta] = -1
-    (sig, bkg) = prediction(thetas)
-    preddown = cat(sig, bkg)
-    transported = trans(g, sig, of_length(thetas, sig))
-    transporteddown = cat(transported, bkg)
-
-    writer.add_scalar("kldiv_up_theta%d" % itheta, binned_kldiv(alltarget.detach(), transportedup.detach()), global_step=epoch)
-    writer.add_scalar("kldiv_down_theta%d" % itheta, binned_kldiv(alltarget.detach(), transporteddown.detach()), global_step=epoch)
-
-    plot_hist(
-        "hist_theta%d" % itheta
+  if number_thetas == 0:
+    fig = plot_hist(
+        "hist_nom"
       , epoch
       , alltarget.detach().squeeze().numpy()
       , prednom.detach().squeeze().numpy()
-      , predup.detach().squeeze().numpy()
-      , preddown.detach().squeeze().numpy()
       , transportednom.detach().squeeze().numpy()
-      , transportedup.detach().squeeze().numpy()
-      , transporteddown.detach().squeeze().numpy()
       )
-
-    fig = plt.figure(figsize = (6, 6))
-
-    kdepredup = kde(predup)
-    kdepreddown = kde(preddown)
-    kdetransportedup = kde(transportedup)
-    kdetransporteddown = kde(transporteddown)
-
-
-    xs = np.mgrid[-1:1:100j]
-
-    plt.plot(
-        xs
-      , kdetarget(xs)
-      , label="observed target"
-      , color='black'
-      , linewidth=2
-      , zorder=5
-      )
-
-    plt.plot(
-        xs
-      , kdeprednom(xs)
-      , linewidth=2
-      , color="red"
-      , linestyle="dotted"
-      , label="original prediction (nominal)"
-      , zorder=3
-      )
-
-    plt.plot(
-        xs
-      , kdepredup(xs)
-      , linewidth=2
-      , color="blue"
-      , linestyle="dotted"
-      , label="original prediction (up)"
-      , zorder=3
-      )
-
-    plt.plot(
-        xs
-      , kdepreddown(xs)
-      , linewidth=2
-      , color="green"
-      , linestyle="dotted"
-      , label="original prediction (down)"
-      , zorder=3
-      )
-
-    plt.plot(
-        xs
-      , kdetransportednom(xs)
-      , linewidth=2
-      , color="red"
-      , linestyle="solid"
-      , label="transported prediction (nominal)"
-      , zorder=3
-      )
-
-    plt.plot(
-        xs
-      , kdetransportedup(xs)
-      , linewidth=2
-      , color="blue"
-      , linestyle="solid"
-      , label="transported prediction (up)"
-      , zorder=3
-      )
-
-    plt.plot(
-        xs
-      , kdetransporteddown(xs)
-      , linewidth=2
-      , color="green"
-      , linestyle="solid"
-      , label="transported prediction (down)"
-      , zorder=3
-      )
-
-    # plt.plot(
-    #     xs
-    #   , kdebkg(xs)
-    #   , label="background"
-    #   , color='gray'
-    #   , linewidth=1
-    #   , zorder=6
-    #   )
-
-
-    fig.legend()
-
-    plt.xlim(-1, 1)
-    plt.xlabel("$x$")
-    plt.ylim(0, max(kdetarget(xs))*2)
-    plt.ylabel("$p(x)$")
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/pdf_theta%d.pdf" % itheta)
+      plt.savefig(outfolder + "/hist_nom.pdf")
 
-    writer.add_figure("pdf_theta%d" % itheta, fig, global_step=epoch)
+    writer.add_figure("hist_nom", fig, global_step=epoch)
 
     fig.clear()
     plt.close()
-    
 
     # plot the transport vs prediction
-    xval = torch.sort(prednom, dim=0)[0]
+    xval = torch.Tensor(np.mgrid[-1:1:100j]).unsqueeze(1)
+    xval.requires_grad = True
 
-    thetas[:,itheta] = 0
-    yvalnom = trans(g, xval, thetas)
-
-    thetas[:,itheta] = 1
-    yvalup = trans(g, xval, thetas)
-
-    thetas[:,itheta] = -1
-    yvaldown = trans(g, xval, thetas)
+    yvalnom = trans(g, xval, thetas[:100])
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport (nominal)")
-    ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "transport (up)")
-    ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "transport (down)")
+    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport")
 
     fig.legend()
 
-    ax.set_xlim(-1, 0)
+    ax.set_xlim(-1, 1)
     plt.ylim(-1, 1)
     plt.xlabel("$x$")
     plt.ylabel("$T x$")
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
+      plt.savefig(outfolder + "/transport_nom.pdf")
 
-    writer.add_figure("transport_theta%d" % itheta, fig, global_step = global_step)
+    writer.add_figure("transport_nom", fig, global_step = global_step)
 
     fig.clear()
     plt.close()
-  
 
     # plot g vs prediction
-    xval = torch.sort(prednom, dim=0)[0]
-
-    thetas[:,itheta] = 0
-    yvalnom = g(thetas, xval)
-
-    thetas[:,itheta] = 1
-    yvalup = g(thetas, xval)
-
-    thetas[:,itheta] = -1
-    yvaldown = g(thetas, xval)
+    yvalnom = g(thetas[:100], xval)
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func (nominal)")
-    ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "g_func (up)")
-    ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "g_func (down)")
+    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func")
 
     fig.legend()
 
@@ -512,13 +356,145 @@ def plot_callback(g, writer, global_step, outfolder=None):
     plt.ylabel("$g(x)$")
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
+      plt.savefig(outfolder + "/g_func_nom.pdf")
 
-    writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
+    writer.add_figure("g_func_nom", fig, global_step = global_step)
 
     fig.clear()
     plt.close()
-  
+
+    # plot f vs prediction
+    yvalnom = f(thetas[:100], xval)
+
+    fig = plt.figure(figsize = (6, 6))
+    ax = fig.add_subplot(111)
+
+    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "f_func")
+
+    fig.legend()
+
+    ax.set_xlim(-1, 1)
+    plt.xlabel("$x$")
+    plt.ylabel("$f(x)$")
+
+    if outfolder is not None:
+      plt.savefig(outfolder + "/f_func_nom.pdf")
+
+    writer.add_figure("f_func_nom", fig, global_step = global_step)
+
+    fig.clear()
+    plt.close()
+
+  else:
+    for itheta in range(number_thetas):
+      thetas = get_thetas(number_samples_source)
+
+      # get the syst variation for the first theta
+      thetas[:,itheta] = 1
+      (sig, bkg) = prediction(thetas)
+      predup = cat(sig, bkg)
+      transported = trans(g, sig, of_length(thetas, sig))
+      transportedup = cat(transported, bkg)
+
+      thetas[:,itheta] = -1
+      (sig, bkg) = prediction(thetas)
+      preddown = cat(sig, bkg)
+      transported = trans(g, sig, of_length(thetas, sig))
+      transporteddown = cat(transported, bkg)
+
+      writer.add_scalar("kldiv_up_theta%d" % itheta, binned_kldiv(alltarget.detach(), transportedup.detach()), global_step=epoch)
+      writer.add_scalar("kldiv_down_theta%d" % itheta, binned_kldiv(alltarget.detach(), transporteddown.detach()), global_step=epoch)
+
+
+      fig = plot_hist(
+          "hist_theta%d" % itheta
+        , epoch
+        , alltarget.detach().squeeze().numpy()
+        , prednom.detach().squeeze().numpy()
+        , transportednom.detach().squeeze().numpy()
+        , predup.detach().squeeze().numpy()
+        , preddown.detach().squeeze().numpy()
+        , transportedup.detach().squeeze().numpy()
+        , transporteddown.detach().squeeze().numpy()
+        )
+
+      if outfolder is not None:
+        plt.savefig(outfolder + "/hist_theta%d.pdf" % itheta)
+
+      writer.add_figure("hist_theta%d" % itheta, fig, global_step=epoch)
+
+      fig.clear()
+      plt.close()
+
+
+      # plot the transport vs prediction
+      xval = torch.sort(prednom, dim=0)[0]
+
+      thetas[:,itheta] = 0
+      yvalnom = trans(g, xval, thetas)
+
+      thetas[:,itheta] = 1
+      yvalup = trans(g, xval, thetas)
+
+      thetas[:,itheta] = -1
+      yvaldown = trans(g, xval, thetas)
+
+      fig = plt.figure(figsize = (6, 6))
+      ax = fig.add_subplot(111)
+
+      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport (nominal)")
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "transport (up)")
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "transport (down)")
+
+      fig.legend()
+
+      ax.set_xlim(-1, 0)
+      plt.ylim(-1, 1)
+      plt.xlabel("$x$")
+      plt.ylabel("$T x$")
+
+      if outfolder is not None:
+        plt.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
+
+      writer.add_figure("transport_theta%d" % itheta, fig, global_step = global_step)
+
+      fig.clear()
+      plt.close()
+    
+
+      # plot g vs prediction
+      xval = torch.sort(prednom, dim=0)[0]
+
+      thetas[:,itheta] = 0
+      yvalnom = g(thetas, xval)
+
+      thetas[:,itheta] = 1
+      yvalup = g(thetas, xval)
+
+      thetas[:,itheta] = -1
+      yvaldown = g(thetas, xval)
+
+      fig = plt.figure(figsize = (6, 6))
+      ax = fig.add_subplot(111)
+
+      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func (nominal)")
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "g_func (up)")
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "g_func (down)")
+
+      fig.legend()
+
+      ax.set_xlim(-1, 1)
+      plt.xlabel("$x$")
+      plt.ylabel("$g(x)$")
+
+      if outfolder is not None:
+        plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
+
+      writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
+
+      fig.clear()
+      plt.close()
+    
   return
 
 
@@ -536,8 +512,8 @@ alltarget = targetmodel(number_samples_target)
 
 f_func = \
   ICNN(
-    #   quad_LReLU(0.1, 1)
-    # , quad_LReLU(0.1, 1)
+    #   quad_LReLU(0.3, 1)
+    # , quad_LReLU(0.3, 1)
       smooth_leaky_ReLU(0.1)
     , smooth_leaky_ReLU(0.1)
     , f_nonconvex_shape
@@ -547,8 +523,8 @@ f_func.enforce_convexity()
 
 g_func = \
   ICNN(
-    #   quad_LReLU(0.1, 1)
-    # , quad_LReLU(0.1, 1)
+    #   quad_LReLU(0.3, 1)
+    # , quad_LReLU(0.3, 1)
       smooth_leaky_ReLU(0.1)
     , smooth_leaky_ReLU(0.1)
     , g_nonconvex_shape
@@ -556,6 +532,14 @@ g_func = \
     )
 g_func.enforce_convexity()
 
+# activations = [smooth_leaky_ReLU(0), smooth_leaky_ReLU(0.2), smooth_leaky_ReLU(0.2)]
+# f_func = ICNN2.ICNN(number_inputs = 1, number_hidden_layers = 4, units_per_layer = 50,
+#               activations = activations)
+# f_func.enforce_convexity()
+
+# g_func = ICNN2.ICNN(number_inputs = 1, number_hidden_layers = 4, units_per_layer = 50,
+#               activations = activations)
+# g_func.enforce_convexity()
 
 # build the optimisers
 f_func_optim = torch.optim.RMSprop(f_func.parameters(), lr = lr_f)
@@ -567,10 +551,11 @@ g_func.to(device)
 
 
 os.mkdir(runname + ".plots")
+
 for epoch in range(number_epochs):
 
   print("plotting.")
-  plot_callback(g_func, writer, epoch, outfolder = runname + ".plots")
+  plot_callback(f_func, g_func, writer, epoch, outfolder = runname + ".plots")
 
   writer.add_scalar("g_func-L2reg", g_func.get_convexity_regularisation_term(), global_step=epoch)
   writer.add_scalar("f_func-L2reg", f_func.get_convexity_regularisation_term(), global_step=epoch)
@@ -581,6 +566,7 @@ for epoch in range(number_epochs):
     for i in range(f_per_g):
       f_func_optim.zero_grad()
 
+      # target = alltarget[torch.randint(alltarget.size()[0], (batch_size, 1))]
       target = targetmodel(batch_size)
 
       thetas = get_thetas(batch_size)
@@ -599,13 +585,13 @@ for epoch in range(number_epochs):
         - f_func(thetas, grad_g)
 
       # evaluate the lagrangian for f
-      lag_f = f_func(thetas, target)
+      lag_f = f_func(thetas, target) 
 
       lag_total = lag_g + lag_f
-      loss_total = torch.mean(lag_total)
+      loss_total = torch.mean(lag_total) + f_func.get_convexity_regularisation_term() 
       loss_total.backward()
       f_func_optim.step()
-      f_func.enforce_convexity()
+      # f_func.enforce_convexity()
 
 
 
@@ -627,8 +613,18 @@ for epoch in range(number_epochs):
       - f_func(thetas, grad_g)
 
     # need to maximise the lagrangian
-    loss_g = torch.mean(-lag_g) # + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
+    loss_g = torch.mean(-lag_g) + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
     loss_g.backward()
     g_func_optim.step()
-    g_func.enforce_convexity() # ... or enforce convexity explicitly
+    # g_func.enforce_convexity() # ... or enforce convexity explicitly
+
+  print("f-loss lag")
+  print(torch.mean(lag_total).item())
+  print("f-loss conv")
+  print(f_func.get_convexity_regularisation_term().item())
+
+  print("g-loss lag")
+  print(torch.mean(-lag_g).item())
+  print("f-loss conv")
+  print(g_func.get_convexity_regularisation_term().item())
 
