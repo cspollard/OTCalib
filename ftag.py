@@ -62,7 +62,7 @@ modeljson = config["model"]
 
 lr_f = config["lr_f"]
 lr_g = config["lr_g"]
-f_per_g = config["f_per_g"]
+g_per_f = config["g_per_f"]
 
 
 def cat(xs, ys):
@@ -99,9 +99,9 @@ def targetmodel(n):
 def signalmodel(thetas):
   n = thetas.size()[0]
   thissigcenter = - 0.5 + 0.1*thetas[:,:1]
-  thissigwidth = 0.1 + 0.1*thetas[:,1:2]
+  thissigwidth = 0.3 + 0.1*thetas[:,1:2]
   thissigwidth = torch.clamp(thissigwidth, 0.05, 99999)
-  return torch.randn((n, 1), device=device)*thissigwidth + thissigcenter
+  return torch.rand((n, 1), device=device)*thissigwidth + thissigcenter
 
 
 def backgroundmodel(thetas):
@@ -125,11 +125,11 @@ def prediction(thetas):
 
 
 # compute gradient d(obj)/d(var)
-def grad(obj, var):
+def grad(outs, ins):
     g = torch.autograd.grad( \
-        obj
-      , var
-      , grad_outputs = torch.ones_like(obj)
+        outs
+      , ins
+      , grad_outputs = torch.ones_like(outs)
       , create_graph = True
       )
 
@@ -512,34 +512,26 @@ alltarget = targetmodel(number_samples_target)
 
 f_func = \
   ICNN(
-    #   quad_LReLU(0.3, 1)
-    # , quad_LReLU(0.3, 1)
-      smooth_leaky_ReLU(0.1)
-    , smooth_leaky_ReLU(0.1)
+      quad_LReLU(0.05, 1)
+    , quad_LReLU(0.05, 1)
+    #   smooth_leaky_ReLU(0.1)
+    # , smooth_leaky_ReLU(0.1)
     , f_nonconvex_shape
     , f_convex_shape
     )
 f_func.enforce_convexity()
 
+
 g_func = \
   ICNN(
-    #   quad_LReLU(0.3, 1)
-    # , quad_LReLU(0.3, 1)
-      smooth_leaky_ReLU(0.1)
-    , smooth_leaky_ReLU(0.1)
+      quad_LReLU(0.05, 1)
+    , quad_LReLU(0.05, 1)
+    #   smooth_leaky_ReLU(0.1)
+    # , smooth_leaky_ReLU(0.1)
     , g_nonconvex_shape
     , g_convex_shape
     )
 g_func.enforce_convexity()
-
-# activations = [smooth_leaky_ReLU(0), smooth_leaky_ReLU(0.2), smooth_leaky_ReLU(0.2)]
-# f_func = ICNN2.ICNN(number_inputs = 1, number_hidden_layers = 4, units_per_layer = 50,
-#               activations = activations)
-# f_func.enforce_convexity()
-
-# g_func = ICNN2.ICNN(number_inputs = 1, number_hidden_layers = 4, units_per_layer = 50,
-#               activations = activations)
-# g_func.enforce_convexity()
 
 # build the optimisers
 f_func_optim = torch.optim.RMSprop(f_func.parameters(), lr = lr_f)
@@ -563,60 +555,56 @@ for epoch in range(number_epochs):
 
   for batch in range(epoch_size):
 
-    for i in range(f_per_g):
-      f_func_optim.zero_grad()
+    for i in range(g_per_f):
 
-      # target = alltarget[torch.randint(alltarget.size()[0], (batch_size, 1))]
-      target = targetmodel(batch_size)
+      g_func.zero_grad()
 
       thetas = get_thetas(batch_size)
 
       (sig, bkg) = prediction(thetas)
-      nsig = sig.size()[0]
       pred = cat(sig, bkg)
 
       sig_vals = g_func(of_length(thetas, sig), sig)
-      bkg_vals = 0.5 * bkg * bkg
 
-      grad_g = cat(grad(sig_vals, sig), grad(bkg_vals, bkg))
+      grad_g = cat(grad(sig_vals, sig), bkg)
 
       lag_g = \
         torch.sum(grad_g * pred, keepdim = True, dim = 1) \
         - f_func(thetas, grad_g)
 
-      # evaluate the lagrangian for f
-      lag_f = f_func(thetas, target) 
-
-      lag_total = lag_g + lag_f
-      loss_total = torch.mean(lag_total) + f_func.get_convexity_regularisation_term() 
-      loss_total.backward()
-      f_func_optim.step()
-      # f_func.enforce_convexity()
+      # need to maximise the lagrangian
+      loss_g = torch.mean(-lag_g) + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
+      loss_g.backward()
+      g_func_optim.step()
+      # g_func.enforce_convexity() # ... or enforce convexity explicitly
 
 
+    f_func_optim.zero_grad()
 
-    g_func.zero_grad()
+    target = targetmodel(batch_size)
 
     thetas = get_thetas(batch_size)
 
     (sig, bkg) = prediction(thetas)
-    nsig = sig.size()[0]
     pred = cat(sig, bkg)
 
     sig_vals = g_func(of_length(thetas, sig), sig)
-    bkg_vals = 0.5 * bkg * bkg
 
-    grad_g = cat(grad(sig_vals, sig), grad(bkg_vals, bkg))
+    grad_g = cat(grad(sig_vals, sig), bkg)
 
     lag_g = \
       torch.sum(grad_g * pred, keepdim = True, dim = 1) \
       - f_func(thetas, grad_g)
 
-    # need to maximise the lagrangian
-    loss_g = torch.mean(-lag_g) + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
-    loss_g.backward()
-    g_func_optim.step()
-    # g_func.enforce_convexity() # ... or enforce convexity explicitly
+    # evaluate the lagrangian for f
+    lag_f = f_func(thetas, target) 
+
+    lag_total = lag_g + lag_f
+    loss_total = torch.mean(lag_total) # + f_func.get_convexity_regularisation_term() 
+    loss_total.backward()
+    f_func_optim.step()
+    f_func.enforce_convexity()
+
 
   print("f-loss lag")
   print(torch.mean(lag_total).item())
@@ -625,6 +613,6 @@ for epoch in range(number_epochs):
 
   print("g-loss lag")
   print(torch.mean(-lag_g).item())
-  print("f-loss conv")
+  print("g-loss conv")
   print(g_func.get_convexity_regularisation_term().item())
 

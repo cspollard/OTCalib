@@ -12,6 +12,16 @@ class One(torch.nn.Module):
     def forward(self, xs):
         return torch.ones([xs.size()[0]] + self.outsize)
 
+class Zero(torch.nn.Module):
+    def __init__(self, outsize):
+        super(Zero, self).__init__()
+
+        self.outsize = outsize
+        return
+
+    def forward(self, xs):
+        return torch.zeros([xs.size()[0]] + self.outsize)
+
 # see details at https://arxiv.org/abs/1609.07152
 class ICNN(torch.nn.Module):
 
@@ -40,9 +50,9 @@ class ICNN(torch.nn.Module):
             return torch.nn.Linear(x, y, bias=False)
 
         # and full linear layer with bias
-        def L(x, y):
+        def L(x, y, default):
             if x == 0:
-                return One([y])
+                return default([y])
             else:
                 return torch.nn.Linear(x, y, bias=True)
 
@@ -69,12 +79,13 @@ class ICNN(torch.nn.Module):
         for lay in range(self.nhidden):
             Wzz.append(W(zsize[lay], zsize[lay+1]))
             Wyz.append(W(ysize, zsize[lay+1]))
-            Luz.append(L(usize[lay], zsize[lay]))
-            Luz1.append(L(usize[lay], zsize[lay+1]))
-            Luy.append(L(usize[lay], ysize))
+
+            Luz.append(L(usize[lay], zsize[lay], One))
+            Luy.append(L(usize[lay], ysize, One))
+            Luz1.append(L(usize[lay], zsize[lay+1], Zero))
 
         for lay in range(self.nhidden - 1):
-            Luutilde.append(L(usize[lay], usize[lay+1]))
+            Luutilde.append(L(usize[lay], usize[lay+1], Zero))
 
 
         self.Wzz = torch.nn.ModuleList(Wzz)
@@ -87,11 +98,12 @@ class ICNN(torch.nn.Module):
         # for p in self.parameters():
         #     p.data.copy_(torch.randn_like(p.data) / p.data.nelement())
 
+        # enforce convexivity
         for wzz in Wzz:
             for p in wzz.parameters():
                 p.data.copy_(p.data.abs())
 
-        # the authors set the weights in the first layer to zero.
+        # the authors fix the weights in the first layer to zero.
         for p in Wzz[0].parameters():
             p.data.copy_(torch.zeros_like(p.data))
             p.requires_grad = False
@@ -106,9 +118,9 @@ class ICNN(torch.nn.Module):
         for i in range(self.nhidden):
             zi = \
               self.g[i](
-                  self.Wzz[i](zi * torch.relu(self.Luz[i](ui))) \
-                + self.Wyz[i](ys * self.Luy[i](ui)) \
-                + self.Luz1[i](ui)
+                  self.Wzz[i](zi) # * torch.relu(self.Luz[i](ui))) \
+                + self.Wyz[i](ys) # * self.Luy[i](ui)) \
+                # + self.Luz1[i](ui)
               )
 
             if i < self.nhidden - 1:
@@ -167,21 +179,12 @@ def poly(cs):
 
 
 # a quadratically interpolated leaky relu function
-# with b the slope below zero
-# and b1 the slope above one
-# a quadratic of the form b*x + (b1 - b)/2 * x*x interpolates between them
+# with m0 the slope below zero
+# and m1 the slope above one
+# a quadratic of the form m0*x + (m1 - m0)/2 * x*x interpolates between them
 def quad_LReLU(m0, m1):
     a = 0
     b = m0
     c = (m1 - m0) / 2
     pospart = piecewise(1, poly([a, b, c]), poly([-c, m1]))
-    return piecewise(0, poly([0, m0]), pospart)
-
-
-def cube_LReLU(m0, m1):
-    a = 0
-    b = m0
-    c = 3 - 2*m0 - m1
-    d = m0 + m1 - 2
-    pospart = piecewise(1, poly([a, b, c, d]), poly([1 - m1, m1]))
     return piecewise(0, poly([0, m0]), pospart)
