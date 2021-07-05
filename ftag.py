@@ -72,10 +72,10 @@ def cat(xs, ys):
 sigcenter = 0.1
 sigwidth1 = 0.1
 sigwidth2 = 0.25
-sigfrac1 = 0.0
+sigfrac1 = 0.5
 bkgcenter = -0.5
 bkgwidth = 1
-sigfrac = 1
+sigfrac = 0.5
 
 
 def targetmodel(n):
@@ -99,9 +99,9 @@ def targetmodel(n):
 def signalmodel(thetas):
   n = thetas.size()[0]
   thissigcenter = - 0.5 + 0.1*thetas[:,:1]
-  thissigwidth = 0.3 + 0.1*thetas[:,1:2]
+  thissigwidth = 0.25 + 0.1*thetas[:,1:2]
   thissigwidth = torch.clamp(thissigwidth, 0.05, 99999)
-  return torch.rand((n, 1), device=device)*thissigwidth + thissigcenter
+  return torch.randn((n, 1), device=device)*thissigwidth + thissigcenter
 
 
 def backgroundmodel(thetas):
@@ -153,7 +153,7 @@ def histcurve(bins, fills, default):
 
 
 def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm1=None, transp1=None):
-      bins = [-1 + x*0.05 for x in range(41)]
+      bins = [-1 + x*0.1 for x in range(21)]
 
       fig = plt.figure(figsize=(6, 6))
       ax = fig.add_subplot(111)
@@ -328,8 +328,8 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     fig.legend()
 
-    ax.set_xlim(-1, 1)
-    plt.ylim(-1, 1)
+    ax.set_xlim(-1, 0)
+    plt.ylim(-0.5, 0.5)
     plt.xlabel("$x$")
     plt.ylabel("$T x$")
 
@@ -534,8 +534,8 @@ g_func = \
 g_func.enforce_convexity()
 
 # build the optimisers
-f_func_optim = torch.optim.RMSprop(f_func.parameters(), lr = lr_f)
-g_func_optim = torch.optim.RMSprop(g_func.parameters(), lr = lr_g)
+f_func_optim = torch.optim.Adam(f_func.parameters(), lr = lr_f)
+g_func_optim = torch.optim.Adam(g_func.parameters(), lr = lr_g)
 
 
 f_func.to(device)
@@ -600,10 +600,10 @@ for epoch in range(number_epochs):
     lag_f = f_func(thetas, target) 
 
     lag_total = lag_g + lag_f
-    loss_total = torch.mean(lag_total) # + f_func.get_convexity_regularisation_term() 
+    loss_total = torch.mean(lag_total) + f_func.get_convexity_regularisation_term() 
     loss_total.backward()
     f_func_optim.step()
-    f_func.enforce_convexity()
+    # f_func.enforce_convexity()
 
 
   print("f-loss lag")

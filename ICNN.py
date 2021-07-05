@@ -2,25 +2,22 @@ import torch
 import numpy as np
 
 
-class One(torch.nn.Module):
-    def __init__(self, outsize):
-        super(One, self).__init__()
+def appL(input, w, b=None):
+    return torch.nn.functional.linear(input, w, b)
 
-        self.outsize = outsize
-        return
 
-    def forward(self, xs):
-        return torch.ones([xs.size()[0]] + self.outsize)
+def weight(x, y):
+    ps = torch.nn.parameter.Parameter(torch.empty((y, x)))
+    if x > 0 and y > 0:
+        torch.nn.init.kaiming_uniform_(ps, a=np.sqrt(5))
+    return ps
 
-class Zero(torch.nn.Module):
-    def __init__(self, outsize):
-        super(Zero, self).__init__()
 
-        self.outsize = outsize
-        return
+def bias(x):
+    ps = torch.nn.parameter.Parameter(torch.empty(x))
+    torch.nn.init.normal_(ps)
+    return ps
 
-    def forward(self, xs):
-        return torch.zeros([xs.size()[0]] + self.outsize)
 
 # see details at https://arxiv.org/abs/1609.07152
 class ICNN(torch.nn.Module):
@@ -44,17 +41,8 @@ class ICNN(torch.nn.Module):
         self.g = [convex_activation for i in range(self.nhidden)]
         self.gtilde = [nonconvex_activation for i in range(self.nhidden - 1)]
 
-
-        # simple matrix mul
-        def W(x, y):
-            return torch.nn.Linear(x, y, bias=False)
-
-        # and full linear layer with bias
-        def L(x, y, default):
-            if x == 0:
-                return default([y])
-            else:
-                return torch.nn.Linear(x, y, bias=True)
+        self.nonconvex_layersizes = nonconvex_layersizes
+        self.convex_layersizes = convex_layersizes
 
 
         # more-or-less following the nomenclature from
@@ -70,45 +58,67 @@ class ICNN(torch.nn.Module):
 
         Wzz = []
         Wyz = []
-        Luz = []
-        Luz1 = []
-        Luy = []
-        Luutilde = []
+        bz = []
+        by = []
+        bz1 = []
+
+        Wuz = []
+        Wuy = []
+        Wuz1 = []
+
+        Wuutilde = []
+        btilde = []
 
 
         for lay in range(self.nhidden):
-            Wzz.append(W(zsize[lay], zsize[lay+1]))
-            Wyz.append(W(ysize, zsize[lay+1]))
+            Wzz.append(weight(zsize[lay], zsize[lay+1]))
+            Wyz.append(weight(ysize, zsize[lay+1]))
+            bz.append(bias(zsize[lay]))
+            by.append(bias(ysize))
+            bz1.append(bias(zsize[lay+1]))
 
-            Luz.append(L(usize[lay], zsize[lay], One))
-            Luy.append(L(usize[lay], ysize, One))
-            Luz1.append(L(usize[lay], zsize[lay+1], Zero))
+            Wuz.append(weight(usize[lay], zsize[lay]))
+            Wuy.append(weight(usize[lay], ysize))
+            Wuz1.append(weight(usize[lay], zsize[lay+1]))
+
 
         for lay in range(self.nhidden - 1):
-            Luutilde.append(L(usize[lay], usize[lay+1], Zero))
+            Wuutilde.append(weight(usize[lay], usize[lay+1]))
+            btilde.append(bias(usize[lay+1]))
 
 
-        self.Wzz = torch.nn.ModuleList(Wzz)
-        self.Wyz = torch.nn.ModuleList(Wyz)
-        self.Luz = torch.nn.ModuleList(Luz)
-        self.Luz1 = torch.nn.ModuleList(Luz1)
-        self.Luy = torch.nn.ModuleList(Luy)
-        self.Luutilde = torch.nn.ModuleList(Luutilde)
+        self.Wzz = Wzz
+        self.Wyz = Wyz
 
-        # for p in self.parameters():
-        #     p.data.copy_(torch.randn_like(p.data) / p.data.nelement())
+        self.bz = bz
+        self.by = by
+        self.bz1 = bz1
+
+        self.Wuz = Wuz
+        self.Wuz1 = Wuz1
+        self.Wuy = Wuy
+        self.Wuutilde = Wuutilde
+        self.btilde = btilde
+
 
         # enforce convexivity
-        for wzz in Wzz:
-            for p in wzz.parameters():
+        for wzz in self.Wzz:
+            for p in wzz:
                 p.data.copy_(p.data.abs())
 
         # the authors fix the weights in the first layer to zero.
-        for p in Wzz[0].parameters():
-            p.data.copy_(torch.zeros_like(p.data))
-            p.requires_grad = False
+        Wzz[0].data.copy_(torch.zeros_like(Wzz[0].data))
+        Wzz[0].requires_grad = False
 
 
+    def parameters(self):
+        return \
+          iter(
+              self.Wzz + self.Wyz
+            + self.bz + self.by + self.bz1
+            + self.Wuz + self.Wuz1 + self.Wuy
+            + self.Wuutilde + self.btilde
+          )
 
 
     def forward(self, xs, ys):
@@ -116,16 +126,25 @@ class ICNN(torch.nn.Module):
         zi = torch.zeros_like(ys)
 
         for i in range(self.nhidden):
+            if self.nonconvex_layersizes[i]:
+                zterm = torch.relu(zi * appL(ui, self.Wuz[i], self.bz[i]))
+                yterm = ys * appL(ui, self.Wuy[i], self.by[i])
+                uterm = appL(ui, self.Wuz1[i], self.bz1[i]) 
+            else:
+                zterm = torch.relu(zi)
+                yterm = ys
+                uterm = self.bz1[i]
+
             zi = \
               self.g[i](
-                  self.Wzz[i](zi) # * torch.relu(self.Luz[i](ui))) \
-                + self.Wyz[i](ys) # * self.Luy[i](ui)) \
-                # + self.Luz1[i](ui)
+                  appL(zterm, self.Wzz[i])
+                + appL(yterm, self.Wyz[i])
+                + uterm
               )
 
-            if i < self.nhidden - 1:
+            if i < self.nhidden - 1 and self.nonconvex_layersizes[i]:
                 # no need to update ui the last time through.
-                ui = self.gtilde[i](self.Luutilde[i](ui))
+                ui = self.gtilde[i](appL(ui, self.Wuutilde[i], self.btilde[i]))
 
         return zi
 
@@ -133,18 +152,16 @@ class ICNN(torch.nn.Module):
     def enforce_convexity(self):
 
         # apply param = max(0, param) = relu(param) to all parameters that need to be nonnegative
-        for W in self.Wzz:
-            for w in W.parameters():
-                w.data.copy_(torch.relu(w.data))
+        for w in self.Wzz:
+            w.data.copy_(torch.relu(w.data))
 
 
     def get_convexity_regularisation_term(self):
 
         L2_reg = 0.0
 
-        for W in self.Wzz:
-            for w in W.parameters():
-                L2_reg += torch.sum(torch.square(torch.relu(-w.data)))
+        for w in self.Wzz:
+            L2_reg += torch.sum(torch.square(torch.relu(-w.data)))
 
         return L2_reg
 
