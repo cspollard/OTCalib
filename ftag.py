@@ -316,7 +316,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
     plt.close()
 
     # plot the transport vs prediction
-    xval = torch.Tensor(np.mgrid[-1:1:100j]).unsqueeze(1)
+    xval = torch.Tensor(np.mgrid[-1:0:100j]).unsqueeze(1)
     xval.requires_grad = True
 
     yvalnom = trans(g, xval, thetas[:100])
@@ -343,6 +343,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     # plot g vs prediction
     yvalnom = g(thetas[:100], xval)
+    yvalnom = yvalnom - torch.min(yvalnom)
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -365,6 +366,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     # plot f vs prediction
     yvalnom = f(thetas[:100], xval)
+    yvalnom = yvalnom - torch.min(yvalnom)
 
     fig = plt.figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
@@ -427,17 +429,17 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       plt.close()
 
 
-      # plot the transport vs prediction
-      xval = torch.sort(prednom, dim=0)[0]
+      xval = torch.Tensor(np.mgrid[-1:0:100j]).unsqueeze(1)
+      xval.requires_grad = True
 
       thetas[:,itheta] = 0
-      yvalnom = trans(g, xval, thetas)
+      yvalnom = trans(g, xval, thetas[:100])
 
       thetas[:,itheta] = 1
-      yvalup = trans(g, xval, thetas)
+      yvalup = trans(g, xval, thetas[:100])
 
       thetas[:,itheta] = -1
-      yvaldown = trans(g, xval, thetas)
+      yvaldown = trans(g, xval, thetas[:100])
 
       fig = plt.figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
@@ -462,28 +464,28 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       plt.close()
     
 
-      # plot g vs prediction
-      xval = torch.sort(prednom, dim=0)[0]
-
       thetas[:,itheta] = 0
-      yvalnom = g(thetas, xval)
+      yvalnom = g(thetas[:100], xval)
+      yvalnom = yvalnom - torch.min(yvalnom)
 
       thetas[:,itheta] = 1
-      yvalup = g(thetas, xval)
+      yvalup = g(thetas[:100], xval)
+      yvalup = yvalup - torch.min(yvalup)
 
       thetas[:,itheta] = -1
-      yvaldown = g(thetas, xval)
+      yvaldown = g(thetas[:100], xval)
+      yvaldown = yvaldown - torch.min(yvaldown)
 
       fig = plt.figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
 
-      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func (nominal)")
-      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "g_func (up)")
-      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "g_func (down)")
+      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "nominal")
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = 1" % itheta)
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = -1" % itheta)
 
       fig.legend()
 
-      ax.set_xlim(-1, 1)
+      ax.set_xlim(-1, 0)
       plt.xlabel("$x$")
       plt.ylabel("$g(x)$")
 
@@ -491,6 +493,41 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
         plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
 
       writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
+
+      fig.clear()
+      plt.close()
+
+      # plot f vs prediction
+      thetas[:,itheta] = 0
+      yvalnom = f(thetas[:100], xval)
+      yvalnom = yvalnom - torch.min(yvalnom)
+
+      thetas[:,itheta] = 1
+      yvalup = f(thetas[:100], xval)
+      yvalup = yvalup - torch.min(yvalup)
+
+      thetas[:,itheta] = -1
+      yvaldown = f(thetas[:100], xval)
+      yvaldown = yvaldown - torch.min(yvaldown)
+
+      fig = plt.figure(figsize = (6, 6))
+      ax = fig.add_subplot(111)
+
+      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "nominal")
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = 1" % itheta)
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = -1" % itheta) 
+
+
+      fig.legend()
+
+      ax.set_xlim(-1, 0)
+      plt.xlabel("$x$")
+      plt.ylabel("$f(x)$")
+
+      if outfolder is not None:
+        plt.savefig(outfolder + "/f_func_theta%d.pdf" % itheta)
+
+      writer.add_figure("f_func_theta%d" % itheta, fig, global_step = global_step)
 
       fig.clear()
       plt.close()
