@@ -51,7 +51,7 @@ assert f_convex_shape[0] == g_convex_shape[0]
 number_dims = f_convex_shape[0]
 number_thetas = f_nonconvex_shape[0]
 
-# the number of nps needed to maket his module run.
+# the number of nps needed to make his module run.
 # any nps that aren't input to the networks will be set to zero.
 number_nps = 2
 
@@ -279,7 +279,7 @@ def detach(obj):
   return obj.squeeze().cpu().detach().numpy()
 
 def get_thetas(n):
-  thetas = torch.zeros((n, number_nps), device=device)
+  thetas = torch.rand((n, number_nps), device=device)*4 - 2
   for i in range(number_nps):
     if i >= number_thetas:
       thetas[:,i] = 0
@@ -389,7 +389,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
   else:
     for itheta in range(number_thetas):
-      thetas = get_thetas(number_samples_source)
+      thetas = torch.zeros((number_samples_source, number_nps), device=device)
 
       # get the syst variation for the first theta
       thetas[:,itheta] = 1
@@ -432,7 +432,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       xval = torch.Tensor(np.mgrid[-1:0:100j]).unsqueeze(1)
       xval.requires_grad = True
 
-      thetas[:,itheta] = 0
+      thetas[:,:] = 0
       yvalnom = trans(g, xval, thetas[:100])
 
       thetas[:,itheta] = 1
@@ -464,7 +464,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       plt.close()
     
 
-      thetas[:,itheta] = 0
+      thetas[:,:] = 0
       yvalnom = g(thetas[:100], xval)
       yvalnom = yvalnom - torch.min(yvalnom)
 
@@ -498,7 +498,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       plt.close()
 
       # plot f vs prediction
-      thetas[:,itheta] = 0
+      thetas[:,:] = 0
       yvalnom = f(thetas[:100], xval)
       yvalnom = yvalnom - torch.min(yvalnom)
 
