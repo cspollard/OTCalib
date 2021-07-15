@@ -2,7 +2,7 @@
 # coding: utf-8
 
 
-outprefix = 'test/'
+outprefix = 'paper/'
 device='cuda'
 
 # TODO
@@ -27,47 +27,81 @@ from itertools import product
 
 from otcalibutils import *
 
-nbatches = 2**10
-nepochs = 200
+totalevents = 2**27
+print("total events to train on:", totalevents)
+nmc = int(2e6)
 
 
-decays = [0.98]
+decays = [0.95]
 acts = [("lrelu", nn.LeakyReLU)] #, ("sig", nn.Sigmoid), ("tanh", nn.Tanh)]
-bss = [64]
-npss = [4, 1]
-nlayer = [4]
-latent = [64]
-lrs = [(0.5, 5e-2)]
-dss = [int(1e6), int(1e5), int(1e4)]
+bss = [4096]
+npss = [10]
+nlayer = [2]
+latent = [1024]
+lrs = [(x, x) for x in [3e-5]]
+dss = [int(1e4), int(1e5)]
+gradnorm = False
 
 controlplots(int(1e6))
 plt.savefig("controlplots.pdf")
 
+
+plt.figure(figsize=(6, 6))
+
+weights = tonp(bootstrap(nmc, device))
+_ = plt.hist(weights, bins=25, label="bootstraps")
+plt.title("bootstrap weights")
+plt.show()
+plt.savefig("bootstraps.pdf")
+
 for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datasize) \
   in product(decays, acts, bss, npss, nlayer, latent, lrs, dss):
 
+    nbatches = max(2**7, datasize // batchsize)
+
+    nepochs = totalevents // (nbatches * batchsize)
+
+    print ("number of batches:", nbatches)
+    print ("number of epochs:", nepochs)
 
     alldata = genData(datasize, device)
-    allmc = genMC(4*datasize, device)
+    allmc = genMC(nmc, device)
+    validmc = genMCWithDataPt(nmc, device)
+    validdata = genData(datasize, device)
 
-    transport = fullyConnected(nlay, 2, nlat, 1+nps, activation)
+    transport1 = fullyConnected(nlay, 2, nlat, nlat, activation)
+    transport2 = fullyConnected(2, nlat+nps, 64, 1, activation)
+    transports = (transport1, transport2)
 
     adversary = fullyConnected(nlay, 2, nlat*2, 1, nn.LeakyReLU)
 
 
-    transport.to(device)
+    transport1.to(device)
+    transport2.to(device)
     adversary.to(device)
     
-    toptim = torch.optim.SGD(transport.parameters(), lr=tlr)
-    aoptim = torch.optim.SGD(adversary.parameters(), lr=alr)
+    toptim = \
+      torch.optim.RMSprop(
+          list(transport1.parameters()) \
+          + list(transport2.parameters())
+        , lr=tlr
+        )
+    aoptim = torch.optim.RMSprop(adversary.parameters(), lr=alr)
 
-    tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, decay)
-    asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, decay)
+    if decay:
+      tsched = torch.optim.lr_scheduler.ExponentialLR(toptim, decay)
+      asched = torch.optim.lr_scheduler.ExponentialLR(aoptim, decay)
 
 
     name = \
-      "sgdexp_%.2f_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
-        % (decay, actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
+      "thetainputs_bootstrap_rmsprop_act_%s_batch_%d_nps_%d_layers_%d_latent_%d_tlr_%0.2e_alr_%0.2e_datasize_%d" \
+        % (actname, batchsize, nps, nlay, nlat, tlr, alr, datasize)
+
+    if gradnorm:
+      name = name + "_gradnorm"
+
+    if decay:
+      name = name + "_decay_%0.2e" % decay
 
     writer = SummaryWriter(outprefix + name)
 
@@ -79,6 +113,7 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
       ttransloss = 0
       realavg = 0
       fakeavg = 0
+      weights = bootstrap(batchsize, device).reshape((batchsize, 1))
 
       print("epoch:", epoch)
 
@@ -99,22 +134,23 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
               real
             , torch.ones_like(real)
             , reduction='mean'
+            , weight=weights
             )
 
         radvloss += tmp1.item()
 
 
         # add gradient regularization
-        # grad_params = torch.autograd.grad(tmp1, adversary.parameters(), create_graph=True, retain_graph=True)
-        # grad_norm = 0
-        # for grad in grad_params:
-        #     grad_norm += grad.pow(2).sum()
-        # grad_norm = grad_norm.sqrt()
+        if gradnorm:
+          grad_params = torch.autograd.grad(tmp1, adversary.parameters(), create_graph=True, retain_graph=True)
+          grad_norm = 0
+          for grad in grad_params:
+              grad_norm += grad.pow(2).sum()
+          grad_norm = grad_norm.sqrt()
 
 
         thetas = torch.randn((batchsize, nps), device=device)
-        transporting = trans(transport, mc, thetas)
-
+        transporting = trans(transports, mc, thetas)
         transported = transporting + mc[:,0:1]
 
         fake = adversary(torch.cat([transported, mc[:,1:]], axis=1))
@@ -130,7 +166,9 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
 
         fadvloss += tmp2.item()
 
-        loss = tmp1 + tmp2 # + 0.1*grad_norm
+        loss = tmp1 + tmp2
+        if gradnorm:
+          loss += 0.1*grad_norm
 
         loss.backward()
         aoptim.step()
@@ -140,18 +178,18 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
         aoptim.zero_grad()
 
         thetas = torch.randn((batchsize, nps), device=device)
-        transporting = trans(transport, mc, thetas)
-
+        transporting = trans(transports, mc, thetas)
         transported = transporting + mc[:,0:1]
+
         fake = adversary(torch.cat([transported, mc[:,1:]], axis=1))
 
-        tmp1 = tloss(transporting)
-        ttransloss += tmp1.item()
+        # tmp1 = tloss(transporting)
+        # ttransloss += tmp1.item()
 
         tmp2 =\
-          binary_cross_entropy_with_logits(
+          - binary_cross_entropy_with_logits(
             fake
-          , torch.ones_like(real)
+          , torch.zeros_like(real)
           , reduction='mean'
           )
 
@@ -162,9 +200,12 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
         loss.backward()
         toptim.step()
 
+        del transported, transporting, loss, tmp2 # , tmp1
 
-      tsched.step()
-      asched.step()
+
+      if decay:
+        tsched.step()
+        asched.step()
 
       # write tensorboard info once per epoch
       writer.add_scalar('radvloss', radvloss / nbatches, epoch)
@@ -174,23 +215,25 @@ for (decay, (actname, activation), batchsize, nps, nlay, nlat, (alr, tlr), datas
       writer.add_scalar('realavg', realavg / nbatches, epoch)
       writer.add_scalar('fakeavg', fakeavg / nbatches, epoch)
 
+      # make validation plots once per 10 epochs
 
-      # make validation plots once per epoch
+      if epoch % 1 == 0:
+        print("plotting")
 
-      plotPtTheta(transport, ptbin(25, 50, allmc), ptbin(25, 50, alldata), nps, writer, "pt_25_50", "$25 < p_T < 50$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(25, 50, validmc), ptbin(25, 50, validdata), nps, writer, "pt_25_50", "$25 < p_T < 50$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(50, 75, allmc), ptbin(50, 75, alldata), nps, writer, "pt_50_75", "$50 < p_T < 75$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(50, 75, validmc), ptbin(50, 75, validdata), nps, writer, "pt_50_75", "$50 < p_T < 75$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(75, 100, allmc), ptbin(75, 100, alldata), nps, writer, "pt_75_100", "$75 < p_T < 100$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(75, 100, validmc), ptbin(75, 100, validdata), nps, writer, "pt_75_100", "$75 < p_T < 100$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(100, 150, allmc), ptbin(100, 150, alldata), nps, writer, "pt_100_150", "$100 < p_T < 150$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(100, 150, validmc), ptbin(100, 150, validdata), nps, writer, "pt_100_150", "$100 < p_T < 150$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(150, 200, allmc), ptbin(150, 200, alldata), nps, writer, "pt_150_200", "$150 < p_T < 200$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(150, 200, validmc), ptbin(150, 200, validdata), nps, writer, "pt_150_200", "$150 < p_T < 200$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(200, 300, allmc), ptbin(200, 300, alldata), nps, writer, "pt_200_300", "$200 < p_T < 300$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(200, 300, validmc), ptbin(200, 300, validdata), nps, writer, "pt_200_300", "$200 < p_T < 300$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(300, 500, allmc), ptbin(300, 500, alldata), nps, writer, "pt_300_500", "$300 < p_T < 500$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(300, 500, validmc), ptbin(300, 500, validdata), nps, writer, "pt_300_500", "$300 < p_T < 500$ [GeV]", epoch, device, nmax=250)
 
-      plotPtTheta(transport, ptbin(500, 1000, allmc), ptbin(500, 1000, alldata), nps, writer, "pt_500_1000", "$500 < p_T < 1000$", epoch, device, nmax=250)
+        plotPtTheta(transports, ptbin(500, 1000, validmc), ptbin(500, 1000, validdata), nps, writer, "pt_500_1000", "$500 < p_T < 1000$ [GeV]", epoch, device, nmax=250)
 
-      save(outprefix + name + ".pth", transport, adversary, toptim, aoptim)
+      save(outprefix + name + ".pth", transports, adversary, toptim, aoptim)
