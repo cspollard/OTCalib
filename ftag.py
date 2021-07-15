@@ -10,6 +10,7 @@ import numpy as np
 from time import time
 from sys import argv
 from ICNN import ICNN, quad_LReLU, smooth_leaky_ReLU
+import pickle
 
 print("torch version:", torch.__version__)
 
@@ -53,7 +54,7 @@ number_thetas = f_nonconvex_shape[0]
 
 # the number of nps needed to make his module run.
 # any nps that aren't input to the networks will be set to zero.
-number_nps = 2
+number_nps = 1
 
 batch_size = config["batch_size"]
 epoch_size = config["epoch_size"]
@@ -75,7 +76,7 @@ sigwidth2 = 0.25
 sigfrac1 = 0.5
 bkgcenter = -0.5
 bkgwidth = 1
-sigfrac = 0.5
+sigfrac = 1.0
 
 
 def targetmodel(n):
@@ -99,7 +100,7 @@ def targetmodel(n):
 def signalmodel(thetas):
   n = thetas.size()[0]
   thissigcenter = - 0.5 + 0.1*thetas[:,:1]
-  thissigwidth = 0.25 + 0.1*thetas[:,1:2]
+  thissigwidth = 0.25 + 0.1*thetas[:,:1]
   thissigwidth = torch.clamp(thissigwidth, 0.05, 99999)
   return torch.randn((n, 1), device=device)*thissigwidth + thissigcenter
 
@@ -152,6 +153,13 @@ def histcurve(bins, fills, default):
   return (xs, ys)
 
 
+def pkl(obj, fname):
+  f = open(fname, 'wb')
+  pickle.dump(obj, f)
+  f.close()
+  return
+
+
 def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm1=None, transp1=None):
       bins = [-1 + x*0.1 for x in range(21)]
 
@@ -181,7 +189,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
       plt.scatter(
           (bins[:-1] + bins[1:]) / 2.0
         , hs[0]
-        , label="target"
+        , label="target data"
         , color='black'
         , linewidth=0
         , marker='o'
@@ -198,6 +206,27 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         , zorder=3
         )
 
+      if variations:
+        plt.plot(
+            xs
+          , hpredup
+          , linewidth=2
+          , color="blue"
+          , linestyle="dotted"
+          , label="original prediction ($+1$)"
+          , zorder=3
+          )
+
+        plt.plot(
+            xs
+          , hpreddown
+          , linewidth=2
+          , color="green"
+          , linestyle="dotted"
+          , label="original prediction ($- 1$)"
+          , zorder=3
+          )
+
       plt.plot(
           xs
         , htransnom
@@ -211,31 +240,11 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
       if variations:
         plt.plot(
             xs
-          , hpredup
-          , linewidth=2
-          , color="blue"
-          , linestyle="dotted"
-          , label="original prediction (up)"
-          , zorder=3
-          )
-
-        plt.plot(
-            xs
-          , hpreddown
-          , linewidth=2
-          , color="green"
-          , linestyle="dotted"
-          , label="original prediction (down)"
-          , zorder=3
-          )
-
-        plt.plot(
-            xs
           , htransup
           , linewidth=2
           , color="blue"
           , linestyle="solid"
-          , label="transported prediction (up)"
+          , label="transported prediction ($+1$)"
           , zorder=3
           )
 
@@ -245,15 +254,19 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , linewidth=2
           , color="green"
           , linestyle="solid"
-          , label="transported prediction (down)"
+          , label="transported prediction ($- 1$)"
           , zorder=3
           )
 
-      fig.legend()
+      if variations:
+        fig.legend(loc=(0.15, 0.60))
+        plt.ylim(0, max(htarget)*2)
+      else:
+        fig.legend(loc=(0.15, 0.75))
+        plt.ylim(0, max(htarget)*1.5)
 
       plt.xlim(-1, 1)
       plt.xlabel("$x$")
-      plt.ylim(0, max(htarget)*2)
       plt.ylabel("$counts\\, /\\, bin$")
 
       return fig
@@ -309,6 +322,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     if outfolder is not None:
       plt.savefig(outfolder + "/hist_nom.pdf")
+      pkl(fig, outfolder + "/hist_nom.pkl")
 
     writer.add_figure("hist_nom", fig, global_step=epoch)
 
@@ -326,8 +340,6 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport")
 
-    fig.legend()
-
     ax.set_xlim(-1, 0)
     plt.ylim(-0.5, 0.5)
     plt.xlabel("$x$")
@@ -335,6 +347,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     if outfolder is not None:
       plt.savefig(outfolder + "/transport_nom.pdf")
+      pkl(fig, outfolder + "/transport_nom.pkl")
 
     writer.add_figure("transport_nom", fig, global_step = global_step)
 
@@ -350,14 +363,13 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func")
 
-    fig.legend()
-
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1, 0)
     plt.xlabel("$x$")
     plt.ylabel("$g(x)$")
 
     if outfolder is not None:
       plt.savefig(outfolder + "/g_func_nom.pdf")
+      pkl(fig, outfolder + "/g_func_nom.pkl")
 
     writer.add_figure("g_func_nom", fig, global_step = global_step)
 
@@ -373,14 +385,13 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "f_func")
 
-    fig.legend()
-
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1, 0)
     plt.xlabel("$x$")
     plt.ylabel("$f(x)$")
 
     if outfolder is not None:
       plt.savefig(outfolder + "/f_func_nom.pdf")
+      pkl(fig, outfolder + "/f_func_nom.pkl")
 
     writer.add_figure("f_func_nom", fig, global_step = global_step)
 
@@ -422,6 +433,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
       if outfolder is not None:
         plt.savefig(outfolder + "/hist_theta%d.pdf" % itheta)
+        pkl(fig, outfolder + "/hist_theta%d.pkl" % itheta)
 
       writer.add_figure("hist_theta%d" % itheta, fig, global_step=epoch)
 
@@ -444,11 +456,11 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       fig = plt.figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
 
-      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport (nominal)")
-      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "transport (up)")
-      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "transport (down)")
+      ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "nominal")
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d = +1$" % itheta)
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d = - 1$" % itheta)
 
-      fig.legend()
+      fig.legend(loc=(0.15, 0.75))
 
       ax.set_xlim(-1, 0)
       plt.ylim(-1, 1)
@@ -457,6 +469,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
       if outfolder is not None:
         plt.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
+        pkl(fig, outfolder + "/transport_theta%d.pkl" % itheta)
 
       writer.add_figure("transport_theta%d" % itheta, fig, global_step = global_step)
 
@@ -480,10 +493,10 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       ax = fig.add_subplot(111)
 
       ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "nominal")
-      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = 1" % itheta)
-      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = -1" % itheta)
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = +1" % itheta)
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta)
 
-      fig.legend()
+      fig.legend(loc=(0.55, 0.75))
 
       ax.set_xlim(-1, 0)
       plt.xlabel("$x$")
@@ -491,6 +504,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
       if outfolder is not None:
         plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
+        pkl(fig, outfolder + "/g_func_theta%d.pkl" % itheta)
 
       writer.add_figure("g_func_theta%d" % itheta, fig, global_step = global_step)
 
@@ -514,11 +528,11 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       ax = fig.add_subplot(111)
 
       ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "nominal")
-      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = 1" % itheta)
-      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = -1" % itheta) 
+      ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = +1" % itheta)
+      ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta) 
 
 
-      fig.legend()
+      fig.legend(loc=(0.55, 0.75))
 
       ax.set_xlim(-1, 0)
       plt.xlabel("$x$")
@@ -526,6 +540,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
 
       if outfolder is not None:
         plt.savefig(outfolder + "/f_func_theta%d.pdf" % itheta)
+        pkl(fig, outfolder + "/f_func_theta%d.pkl" % itheta)
 
       writer.add_figure("f_func_theta%d" % itheta, fig, global_step = global_step)
 

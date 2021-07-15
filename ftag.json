@@ -5,14 +5,14 @@
 
 , "f_convex_shape" : [1, 16, 16, 16, 1]
 , "g_convex_shape" : [1, 16, 16, 16, 1]
-, "f_nonconvex_shape" : [2, 4, 4, 4] 
-, "g_nonconvex_shape" : [2, 1, 1, 1]
+, "f_nonconvex_shape" : [0, 0, 0, 0]
+, "g_nonconvex_shape" : [0, 0, 0, 0]
 , "batch_size" : 1024
 , "epoch_size" : 64
-, "number_epochs" : 500000
+, "number_epochs" : 50000
 
-, "lr_f" : 3e-4
-, "lr_g" : 3e-4
+, "lr_f" : 3e-5
+, "lr_g" : 3e-5
 , "model" : {}
 , "g_per_f" : 10
 }
