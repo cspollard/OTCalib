@@ -76,7 +76,7 @@ sigwidth2 = 0.25
 sigfrac1 = 0.5
 bkgcenter = -0.5
 bkgwidth = 1
-sigfrac = 1.0
+sigfrac = 0.5
 
 
 def targetmodel(n):
