@@ -301,7 +301,7 @@ def get_thetas(n):
 
 
 def plot_callback(f, g, writer, global_step, outfolder=None):
-  thetas = get_thetas(number_samples_source)
+  thetas = torch.zeros((number_samples_source,1), device=device)
 
   (sig, bkg) = prediction(thetas)
   prednom = cat(sig, bkg)
