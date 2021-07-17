@@ -112,13 +112,46 @@ class ICNN(torch.nn.Module):
 
 
     def parameters(self):
+        for p in self.parameterdict().values():
+            for q in p:
+                yield q
+
+        # return iter([q for p in self.parameterdict().values() for q in p])
+
+
+    def parameterdict(self):
         return \
-          iter(
-              self.Wzz + self.Wyz
-            + self.bz + self.by + self.bz1
-            + self.Wuz + self.Wuz1 + self.Wuy
-            + self.Wuutilde + self.btilde
-          )
+            { "Wzz" : self.Wzz
+            , "Wyz" : self.Wyz
+            , "bz" : self.bz
+            , "by" : self.by
+            , "bz1" : self.bz1
+            , "Wuz" : self.Wuz
+            , "Wuz1" : self.Wuz1
+            , "Wuy" : self.Wuy
+            , "Wuutilde" : self.Wuutilde
+            , "btilde" : self.btilde
+            }
+
+
+    def save(self, path):
+        return torch.save(self.parameterdict(), path)
+
+    def load(self, path):
+        d = torch.load(path)
+
+        self.Wzz = d["Wzz"]
+        self.Wyz  = d["Wyz"]
+        self.bz = d["bz"]
+        self.by = d["by"]
+        self.bz1 = d["bz1"]
+        self.Wuz = d["Wuz"]
+        self.Wuz1 = d["Wuz1"]
+        self.Wuy = d["Wuy"]
+        self.Wuutilde = d["Wuutilde"]
+        self.btilde = d["btilde"]
+
+        return d
 
 
     def forward(self, xs, ys):
@@ -164,6 +197,7 @@ class ICNN(torch.nn.Module):
             L2_reg += torch.sum(torch.square(torch.relu(-w.data)))
 
         return L2_reg
+
 
 
 # need a smooth version to make sure the transport potential has a smooth gradient
