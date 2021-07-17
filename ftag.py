@@ -1,6 +1,3 @@
-# TODO
-# change back to histograms
-
 import functools
 
 import torch
@@ -173,7 +170,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         variations = True
         hists = [ target , pred , trans , predm1 , predp1 , transm1 , transp1 ]
 
-      hs, bins, _ = ax.hist( hists , bins=bins , density=False)
+      hs, bins, _ = ax.hist( hists , bins=bins , density=True)
 
       (xs, htarget) = histcurve(bins, hs[0], 0)
       (xs, hprednom) = histcurve(bins, hs[1], 0)
@@ -213,7 +210,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , linewidth=2
           , color="blue"
           , linestyle="dotted"
-          , label="original prediction ($+1$)"
+          , label="original prediction ($\\theta_0 = +1$)"
           , zorder=3
           )
 
@@ -223,7 +220,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , linewidth=2
           , color="green"
           , linestyle="dotted"
-          , label="original prediction ($- 1$)"
+          , label="original prediction ($\\theta_0 = -1$)"
           , zorder=3
           )
 
@@ -244,7 +241,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , linewidth=2
           , color="blue"
           , linestyle="solid"
-          , label="transported prediction ($+1$)"
+          , label="transported prediction ($\\theta_0 = +1$)"
           , zorder=3
           )
 
@@ -254,20 +251,42 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , linewidth=2
           , color="green"
           , linestyle="solid"
-          , label="transported prediction ($- 1$)"
+          , label="transported prediction ($\\theta_0 = - 1$)"
           , zorder=3
           )
 
-      if variations:
-        fig.legend(loc=(0.15, 0.60))
+      if not variations:
+        handles = \
+          [ plt.Line2D([0], [0], color = 'red', linestyle = "dotted", label = "original prediction")
+          , plt.Line2D([0], [0], color = 'red', linestyle = "solid", label = "transported prediction")
+          , plt.Line2D([0], [0], marker = 'o', color = 'black', label = "target data")
+          ]
+
+        fig.legend(loc=(0.15, 0.60), handles=handles, prop={'size': 18}, frameon=False)
         plt.ylim(0, max(htarget)*2)
+
       else:
-        fig.legend(loc=(0.15, 0.75))
+        handles = \
+          [ plt.Line2D([0], [0], color = 'black', linestyle = "dotted", label = "original prediction")
+          , plt.Line2D([0], [0], color = 'black', linestyle = "solid", label = "transported prediction")
+          , plt.Line2D([0], [0], marker = 'o', color = 'black', linewidth = 0, label = "target data")
+          ]
+
+        fig.legend(loc=(0.15, 0.71), handles=handles, prop={'size': 14}, frameon=False)
+
+        handles = \
+          [ plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'red', markeredgecolor = 'red', label = "$\\theta_0 = 0$")
+          , plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'blue', markeredgecolor = 'blue', label = "$\\theta_0 = +1$")
+          , plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'green', markeredgecolor = 'green', label = "$\\theta_0 = -1$")
+          ]
+
+        fig.legend(loc=(0.63, 0.70), handles=handles, prop={'size': 14}, frameon=False)
+
         plt.ylim(0, max(htarget)*1.5)
 
       plt.xlim(-1, 1)
-      plt.xlabel("$x$")
-      plt.ylabel("$counts\\, /\\, bin$")
+      plt.xlabel("$x$, $x'$, $y$", fontsize=18)
+      plt.ylabel("bin density", fontsize=18)
 
       return fig
 
@@ -460,7 +479,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d = +1$" % itheta)
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d = - 1$" % itheta)
 
-      fig.legend(loc=(0.15, 0.75))
+      fig.legend(loc=(0.15, 0.75), frameon=False)
 
       ax.set_xlim(-1, 0)
       plt.ylim(-1, 1)
@@ -496,7 +515,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = +1" % itheta)
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta)
 
-      fig.legend(loc=(0.55, 0.75))
+      fig.legend(loc=(0.55, 0.75), frameon=False)
 
       ax.set_xlim(-1, 0)
       plt.xlabel("$x$")
@@ -532,7 +551,7 @@ def plot_callback(f, g, writer, global_step, outfolder=None):
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta) 
 
 
-      fig.legend(loc=(0.55, 0.75))
+      fig.legend(loc=(0.55, 0.75), frameon=False)
 
       ax.set_xlim(-1, 0)
       plt.xlabel("$x$")
@@ -566,8 +585,6 @@ f_func = \
   ICNN(
       quad_LReLU(0.05, 1)
     , quad_LReLU(0.05, 1)
-    #   smooth_leaky_ReLU(0.1)
-    # , smooth_leaky_ReLU(0.1)
     , f_nonconvex_shape
     , f_convex_shape
     )
@@ -578,8 +595,6 @@ g_func = \
   ICNN(
       quad_LReLU(0.05, 1)
     , quad_LReLU(0.05, 1)
-    #   smooth_leaky_ReLU(0.1)
-    # , smooth_leaky_ReLU(0.1)
     , g_nonconvex_shape
     , g_convex_shape
     )
@@ -604,6 +619,9 @@ for epoch in range(number_epochs):
   writer.add_scalar("g_func-L2reg", g_func.get_convexity_regularisation_term(), global_step=epoch)
   writer.add_scalar("f_func-L2reg", f_func.get_convexity_regularisation_term(), global_step=epoch)
   print("starting epoch %03d" % epoch)
+
+  torch.save(g_func.state_dict(), runname + "/gfunc.pth")
+  torch.save(f_func.state_dict(), runname + "/ffunc.pth")
 
   for batch in range(epoch_size):
 
