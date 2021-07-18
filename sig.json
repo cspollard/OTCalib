@@ -3,8 +3,8 @@
 , "number_samples_target" : 99999
 , "number_samples_source" : 99999
 
-, "f_convex_shape" : [1, 16, 16, 16, 1]
-, "g_convex_shape" : [1, 16, 16, 16, 1]
+, "f_convex_shape" : [1, 32, 32, 32, 1]
+, "g_convex_shape" : [1, 32, 32, 32, 1]
 , "f_nonconvex_shape" : [0, 0, 0, 0]
 , "g_nonconvex_shape" : [0, 0, 0, 0]
 , "batch_size" : 256

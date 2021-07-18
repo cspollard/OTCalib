@@ -3,16 +3,16 @@
 , "number_samples_target" : 99999
 , "number_samples_source" : 99999
 
-, "f_convex_shape" : [1, 16, 16, 16, 1]
-, "g_convex_shape" : [1, 16, 16, 16, 1]
+, "f_convex_shape" : [1, 32, 32, 32, 1]
+, "g_convex_shape" : [1, 32, 32, 32, 1]
 , "f_nonconvex_shape" : [0, 0, 0, 0]
 , "g_nonconvex_shape" : [0, 0, 0, 0]
-, "batch_size" : 1024
-, "epoch_size" : 256
-, "number_epochs" : 500
+, "batch_size" : 256
+, "epoch_size" : 64
+, "number_epochs" : 50000
 
-, "lr_f" : 3e-4
-, "lr_g" : 3e-4
+, "lr_f" : 1e-4
+, "lr_g" : 1e-4
 , "model" : {}
 , "g_per_f" : 10
 }

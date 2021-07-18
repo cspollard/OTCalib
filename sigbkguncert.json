@@ -3,10 +3,10 @@
 , "number_samples_target" : 99999
 , "number_samples_source" : 99999
 
-, "f_convex_shape" : [1, 32, 32, 32, 32, 1]
-, "g_convex_shape" : [1, 32, 32, 32, 32, 1]
-, "f_nonconvex_shape" : [1, 2, 2, 2, 2] 
-, "g_nonconvex_shape" : [1, 2, 2, 2, 2]
+, "f_convex_shape" : [1, 64, 64, 1]
+, "g_convex_shape" : [1, 64, 64, 1]
+, "f_nonconvex_shape" : [1, 8, 8]
+, "g_nonconvex_shape" : [1, 8, 8]
 , "batch_size" : 256
 , "epoch_size" : 64
 , "number_epochs" : 500000

@@ -26,7 +26,6 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       , prednom.detach().squeeze().numpy()
       , transportednom.detach().squeeze().numpy()
       )
-    plt.tight_layout()
 
     if outfolder is not None:
       plt.savefig(outfolder + "/hist_nom.pdf")
@@ -62,7 +61,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       pkl(fig, outfolder + "/transport_nom.pkl")
 
     if writer is not None:
-      writer.add_figure("transport_nom", fig, global_step = global_step)
+      writer.add_figure("transport_nom", fig, global_step = epoch)
 
     fig.clear()
     plt.close()
@@ -77,6 +76,8 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func")
 
     ax.set_xlim(-1, 0)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
     plt.xlabel("$x$", fontsize=18)
     plt.ylabel("$g(x)$", fontsize=18)
     plt.tight_layout()
@@ -86,7 +87,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       pkl(fig, outfolder + "/g_func_nom.pkl")
 
     if writer is not None:
-      writer.add_figure("g_func_nom", fig, global_step = global_step)
+      writer.add_figure("g_func_nom", fig, global_step = epoch)
 
     fig.clear()
     plt.close()
@@ -113,7 +114,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       pkl(fig, outfolder + "/f_func_nom.pkl")
 
     if writer is not None:
-      writer.add_figure("f_func_nom", fig, global_step = global_step)
+      writer.add_figure("f_func_nom", fig, global_step = epoch)
 
     fig.clear()
     plt.close()
@@ -181,7 +182,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d = +1$" % itheta)
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d = - 1$" % itheta)
 
-      ax.legend(loc=(0.15, 0.70), prop={'size': 14}, frameon=False)
+      ax.legend(loc=(0.10, 0.75), prop={'size': 14}, frameon=False)
 
       ax.set_xlim(-1, 0)
       ax.set_ylim(-0.5, 0.5)
@@ -221,7 +222,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d$ = +1" % itheta)
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta)
 
-      ax.legend(loc=(0.15, 0.70), prop={'size': 14}, frameon=False)
+      ax.legend(loc=(0.10, 0.75), prop={'size': 14}, frameon=False)
 
       ax.set_xlim(-1, 0)
       ax.tick_params(axis='both', which='major', labelsize=14)
@@ -261,7 +262,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d$ = - 1" % itheta) 
 
 
-      ax.legend(loc=(0.65, 0.70), prop={'size': 14}, frameon=False)
+      ax.legend(loc=(0.60, 0.75), prop={'size': 14}, frameon=False)
       ax.set_xlim(-1, 1)
       ax.tick_params(axis='both', which='major', labelsize=14)
       plt.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
@@ -381,6 +382,8 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , zorder=3
           )
 
+      plt.ylim(0, max(htarget)*1.5)
+
       if not variations:
         handles = \
           [ plt.Line2D([0], [0], color = 'red', linestyle = "dotted", label = "original sim.")
@@ -388,8 +391,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , plt.Line2D([0], [0], marker = 'o', color = 'black', label = "calibration data")
           ]
 
-        ax.legend(loc=(0.63, 0.70), handles=handles, prop={'size': 14}, frameon=False)
-        plt.ylim(0, max(htarget)*1.5)
+        fig.legend(loc=(0.20, 0.78), handles=handles, prop={'size': 14}, frameon=False)
 
       else:
         handles = \
@@ -398,7 +400,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , plt.Line2D([0], [0], marker = 'o', color = 'black', linewidth = 0, label = "calibration data")
           ]
 
-        ax.legend(loc=(0.15, 0.71), handles=handles, prop={'size': 14}, frameon=False)
+        fig.legend(loc=(0.20, 0.78), handles=handles, prop={'size': 14}, frameon=False)
 
         handles = \
           [ plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'red', markeredgecolor = 'red', label = "$\\theta_0 = 0$")
@@ -406,13 +408,14 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'green', markeredgecolor = 'green', label = "$\\theta_0 = -1$")
           ]
 
-        ax.legend(loc=(0.63, 0.70), handles=handles, prop={'size': 14}, frameon=False)
-
-        plt.ylim(0, max(htarget)*1.5)
+        fig.legend(loc=(0.63, 0.77), handles=handles, prop={'size': 14}, frameon=False)
 
       plt.xlim(-1, 1)
+      plt.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
+      plt.tick_params(axis='both', which='major', labelsize=14)
       plt.xlabel("$x$, $x'$, $y$", fontsize=18)
       plt.ylabel("binned probability density", fontsize=18)
+      plt.tight_layout()
 
       return fig
 
