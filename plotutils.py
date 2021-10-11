@@ -1,16 +1,17 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.figure as figure
+import matplotlib.lines as lines
 from utils import *
 
 
 def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, writer=None, epoch=None, outfolder=None):
   thetas = torch.zeros((num_samples, 1), device=device)
 
-  (sig, bkg) = prediction(thetas)
-  prednom = cat(sig, bkg)
-  transported = trans(g, sig, of_length(thetas, sig))
-  transportednom = cat(transported, bkg)
+  (signom, bkgnom) = prediction(thetas)
+  prednom = cat(signom, bkgnom)
+  transported = trans(g, signom, of_length(thetas, signom))
+  transportednom = cat(transported, bkgnom)
 
   alltarget = target(num_samples)
 
@@ -28,14 +29,13 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       )
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/hist_nom.pdf")
+      fig.savefig(outfolder + "/hist_nom.pdf")
       pkl(fig, outfolder + "/hist_nom.pkl")
 
     if writer is not None:
       writer.add_figure("hist_nom", fig, global_step=epoch)
 
-    fig.clear()
-    plt.close()
+    fig.clf()
 
     # plot the transport vs prediction
     xval = torch.Tensor(np.mgrid[-1:0:100j]).unsqueeze(1)
@@ -43,7 +43,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
 
     yvalnom = trans(g, xval, thetas[:100])
 
-    fig = plt.figure(figsize = (6, 6))
+    fig = figure.Figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport")
@@ -52,25 +52,24 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
     ax.set_ylim(-0.5, 0.5)
     ax.tick_params(axis='both', which='major', labelsize=14)
 
-    plt.xlabel("$x$", fontsize=18)
-    plt.ylabel("$x' = T(x)$", fontsize=18)
-    plt.tight_layout()
+    ax.set_xlabel("$x$", fontsize=18)
+    ax.set_ylabel("$x' = T(x)$", fontsize=18)
+    fig.tight_layout()
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/transport_nom.pdf")
+      fig.savefig(outfolder + "/transport_nom.pdf")
       pkl(fig, outfolder + "/transport_nom.pkl")
 
     if writer is not None:
       writer.add_figure("transport_nom", fig, global_step = epoch)
 
-    fig.clear()
-    plt.close()
+    fig.clf()
 
     # plot g vs prediction
     yvalnom = g(thetas[:100], xval)
     yvalnom = yvalnom - torch.min(yvalnom)
 
-    fig = plt.figure(figsize = (6, 6))
+    fig = figure.Figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "g_func")
@@ -78,62 +77,60 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
     ax.set_xlim(-1, 0)
     ax.tick_params(axis='both', which='major', labelsize=14)
 
-    plt.xlabel("$x$", fontsize=18)
-    plt.ylabel("$g(x)$", fontsize=18)
-    plt.tight_layout()
+    ax.set_xlabel("$x$", fontsize=18)
+    ax.set_ylabel("$g(x)$", fontsize=18)
+    fig.tight_layout()
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/g_func_nom.pdf")
+      fig.savefig(outfolder + "/g_func_nom.pdf")
       pkl(fig, outfolder + "/g_func_nom.pkl")
 
     if writer is not None:
       writer.add_figure("g_func_nom", fig, global_step = epoch)
 
-    fig.clear()
-    plt.close()
+    fig.clf()
 
     xval = torch.Tensor(np.mgrid[-1:1:100j]).unsqueeze(1)
     yvalnom = f(thetas[:100], xval)
     yvalnom = yvalnom - torch.min(yvalnom)
 
-    fig = plt.figure(figsize = (6, 6))
+    fig = figure.Figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
     ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "f_func")
 
     ax.set_xlim(-1, 1)
     ax.tick_params(axis='both', which='major', labelsize=14)
-    plt.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
+    figure.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
 
-    plt.xlabel("$y$", fontsize=18)
-    plt.ylabel("$f(y)$", fontsize=18)
-    plt.tight_layout()
+    ax.set_xlabel("$y$", fontsize=18)
+    ax.set_ylabel("$f(y)$", fontsize=18)
+    fig.tight_layout()
 
     if outfolder is not None:
-      plt.savefig(outfolder + "/f_func_nom.pdf")
+      fig.savefig(outfolder + "/f_func_nom.pdf")
       pkl(fig, outfolder + "/f_func_nom.pkl")
 
     if writer is not None:
       writer.add_figure("f_func_nom", fig, global_step = epoch)
 
-    fig.clear()
-    plt.close()
+    fig.clf()
 
   else:
     for itheta in range(num_thetas):
       thetas = torch.zeros((num_samples, num_thetas), device=device)
 
       thetas[:,itheta] = 1
-      (sig, bkg) = prediction(thetas)
-      predup = cat(sig, bkg)
-      transported = trans(g, sig, of_length(thetas, sig))
-      transportedup = cat(transported, bkg)
+      (sigup, bkgup) = prediction(thetas)
+      predup = cat(sigup, bkgup)
+      transported = trans(g, sigup, of_length(thetas, sigup))
+      transportedup = cat(transported, bkgup)
 
       thetas[:,itheta] = -1
-      (sig, bkg) = prediction(thetas)
-      preddown = cat(sig, bkg)
-      transported = trans(g, sig, of_length(thetas, sig))
-      transporteddown = cat(transported, bkg)
+      (sigdown, bkgdown) = prediction(thetas)
+      preddown = cat(sigdown, bkgdown)
+      transported = trans(g, sigdown, of_length(thetas, sigdown))
+      transporteddown = cat(transported, bkgdown)
 
       if writer is not None:
         writer.add_scalar("kldiv_up_theta%d" % itheta, binned_kldiv(alltarget.detach(), transportedup.detach()), global_step=epoch)
@@ -153,14 +150,13 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
         )
 
       if outfolder is not None:
-        plt.savefig(outfolder + "/hist_theta%d.pdf" % itheta)
+        fig.savefig(outfolder + "/hist_theta%d.pdf" % itheta)
         pkl(fig, outfolder + "/hist_theta%d.pkl" % itheta)
 
       if writer is not None:
         writer.add_figure("hist_theta%d" % itheta, fig, global_step=epoch)
 
-      fig.clear()
-      plt.close()
+      fig.clf()
 
 
       xval = torch.Tensor(np.mgrid[-1:0:100j]).unsqueeze(1)
@@ -175,32 +171,42 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       thetas[:,itheta] = -1
       yvaldown = trans(g, xval, thetas[:100])
 
-      fig = plt.figure(figsize = (6, 6))
+      fig = figure.Figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
 
       ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "$\\theta_%d = 0$" % itheta)
       ax.plot(detach(xval), detach(yvalup), color = "blue", lw = 2, label = "$\\theta_%d = +1$" % itheta)
       ax.plot(detach(xval), detach(yvaldown), color = "green", lw = 2, label = "$\\theta_%d = - 1$" % itheta)
 
-      ax.legend(loc=(0.10, 0.75), prop={'size': 14}, frameon=False)
+      ax.plot(detach(sort(signom)), detach(sort(of_length(alltarget, signom))), "--", color = "red", lw = 2, label = "$\\theta_%d = 0$ (true)" % itheta)
+      ax.plot(detach(sort(sigup)), detach(sort(of_length(alltarget, sigup))), "--", color = "blue", lw = 2, label = "$\\theta_%d = +1$ (true)" % itheta)
+      ax.plot(detach(sort(sigdown)), detach(sort(of_length(alltarget, sigdown))), "--", color = "green", lw = 2, label = "$\\theta_%d = - 1$ (true)" % itheta)
+      
+      handles = \
+        [ lines.Line2D([0], [0], color = 'black', linestyle = "dashed", label = "true optimal transport")
+        , lines.Line2D([0], [0], color = 'black', linestyle = "solid", label = "derived optimal transport")
+        , lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'red', markeredgecolor = 'red', label = "$\\theta_0 = 0$")
+        , lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'blue', markeredgecolor = 'blue', label = "$\\theta_0 = +1$")
+        , lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'green', markeredgecolor = 'green', label = "$\\theta_0 = -1$")
+        ]
+
+      fig.legend(loc=(0.4, 0.2), handles=handles, prop={'size': 14}, frameon=False)
 
       ax.set_xlim(-1, 0)
       ax.set_ylim(-0.5, 0.5)
       ax.tick_params(axis='both', which='major', labelsize=14)
-
-      plt.xlabel("$x$", fontsize=18)
-      plt.ylabel("$x' = T(x; \\theta_0)$", fontsize=18)
-      plt.tight_layout()
+      ax.set_xlabel("$x$", fontsize=18)
+      ax.set_ylabel("$x' = T(x; \\theta_0)$", fontsize=18)
+      fig.tight_layout()
 
       if outfolder is not None:
-        plt.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
+        fig.savefig(outfolder + "/transport_theta%d.pdf" % itheta)
         pkl(fig, outfolder + "/transport_theta%d.pkl" % itheta)
 
       if writer is not None:
         writer.add_figure("transport_theta%d" % itheta, fig, global_step = epoch)
 
-      fig.clear()
-      plt.close()
+      fig.clf()
     
 
       thetas[:,:] = 0
@@ -215,7 +221,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       yvaldown = g(thetas[:100], xval)
       yvaldown = yvaldown - torch.min(yvaldown)
 
-      fig = plt.figure(figsize = (6, 6))
+      fig = figure.Figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
 
       ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "$\\theta_%d = 0$" % itheta)
@@ -226,19 +232,18 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
 
       ax.set_xlim(-1, 0)
       ax.tick_params(axis='both', which='major', labelsize=14)
-      plt.xlabel("$x$", fontsize=18)
-      plt.ylabel("$g(x; \\theta_0)$", fontsize=18)
-      plt.tight_layout()
+      ax.set_xlabel("$x$", fontsize=18)
+      ax.set_ylabel("$g(x; \\theta_0)$", fontsize=18)
+      fig.tight_layout()
 
       if outfolder is not None:
-        plt.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
+        fig.savefig(outfolder + "/g_func_theta%d.pdf" % itheta)
         pkl(fig, outfolder + "/g_func_theta%d.pkl" % itheta)
 
       if writer is not None:
         writer.add_figure("g_func_theta%d" % itheta, fig, global_step = epoch)
 
-      fig.clear()
-      plt.close()
+      fig.clf()
 
       # plot f vs prediction
       xval = torch.Tensor(np.mgrid[-1:1:100j]).unsqueeze(1)
@@ -254,7 +259,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       yvaldown = f(thetas[:100], xval)
       yvaldown = yvaldown - torch.min(yvaldown)
 
-      fig = plt.figure(figsize = (6, 6))
+      fig = figure.Figure(figsize = (6, 6))
       ax = fig.add_subplot(111)
 
       ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "$\\theta_%d = 0$" % itheta)
@@ -265,21 +270,20 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
       ax.legend(loc=(0.60, 0.75), prop={'size': 14}, frameon=False)
       ax.set_xlim(-1, 1)
       ax.tick_params(axis='both', which='major', labelsize=14)
-      plt.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
+      ax.set_xticks(ticks=[-1, -0.5, 0, 0.5, 1])
 
-      plt.xlabel("$y$", fontsize=18)
-      plt.ylabel("$f(y; \\theta_%d)$" % itheta, fontsize=18)
-      plt.tight_layout()
+      ax.set_xlabel("$y$", fontsize=18)
+      ax.set_ylabel("$f(y; \\theta_%d)$" % itheta, fontsize=18)
+      fig.tight_layout()
 
       if outfolder is not None:
-        plt.savefig(outfolder + "/f_func_theta%d.pdf" % itheta)
+        fig.savefig(outfolder + "/f_func_theta%d.pdf" % itheta)
         pkl(fig, outfolder + "/f_func_theta%d.pkl" % itheta)
 
       if writer is not None:
         writer.add_figure("f_func_theta%d" % itheta, fig, global_step = epoch)
 
-      fig.clear()
-      plt.close()
+      fig.clf()
 
   return
 
@@ -287,7 +291,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
 def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm1=None, transp1=None):
       bins = [-1 + x*0.1 for x in range(21)]
 
-      fig = plt.figure(figsize=(6, 6))
+      fig = figure.Figure(figsize=(6, 6))
       ax = fig.add_subplot(111)
 
       if any(x is None for x in [predm1, predp1, transm1, transp1]):
@@ -308,9 +312,11 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         (xs, htransup) = histcurve(bins, hs[5], 0)
         (xs, htransdown) = histcurve(bins, hs[6], 0)
 
-      fig.clear()
+      fig.clf()
       
-      plt.scatter(
+      fig = figure.Figure(figsize=(6, 6))
+      ax = fig.add_subplot(111)
+      ax.scatter(
           (bins[:-1] + bins[1:]) / 2.0
         , hs[0]
         , label="target data"
@@ -320,7 +326,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         , zorder=5
         )
 
-      plt.plot(
+      ax.plot(
           xs
         , hprednom
         , color='red'
@@ -331,7 +337,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         )
 
       if variations:
-        plt.plot(
+        ax.plot(
             xs
           , hpredup
           , linewidth=2
@@ -341,7 +347,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , zorder=3
           )
 
-        plt.plot(
+        ax.plot(
             xs
           , hpreddown
           , linewidth=2
@@ -351,7 +357,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , zorder=3
           )
 
-      plt.plot(
+      ax.plot(
           xs
         , htransnom
         , linewidth=2
@@ -362,7 +368,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
         )
 
       if variations:
-        plt.plot(
+        ax.plot(
             xs
           , htransup
           , linewidth=2
@@ -372,7 +378,7 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , zorder=3
           )
 
-        plt.plot(
+        ax.plot(
             xs
           , htransdown
           , linewidth=2
@@ -382,40 +388,39 @@ def plot_hist(name, epoch, target, pred, trans, predm1=None, predp1=None, transm
           , zorder=3
           )
 
-      plt.ylim(0, max(htarget)*1.5)
 
       if not variations:
         handles = \
-          [ plt.Line2D([0], [0], color = 'red', linestyle = "dotted", label = "original sim.")
-          , plt.Line2D([0], [0], color = 'red', linestyle = "solid", label = "transported sim.")
-          , plt.Line2D([0], [0], marker = 'o', color = 'black', label = "calibration data")
+          [ lines.Line2D([0], [0], color = 'red', linestyle = "dotted", label = "original sim.")
+          , lines.Line2D([0], [0], color = 'red', linestyle = "solid", label = "transported sim.")
+          , lines.Line2D([0], [0], marker = 'o', color = 'black', label = "calibration data")
           ]
 
         fig.legend(loc=(0.20, 0.78), handles=handles, prop={'size': 14}, frameon=False)
 
       else:
         handles = \
-          [ plt.Line2D([0], [0], color = 'black', linestyle = "dotted", label = "original sim.")
-          , plt.Line2D([0], [0], color = 'black', linestyle = "solid", label = "transported sim.")
-          , plt.Line2D([0], [0], marker = 'o', color = 'black', linewidth = 0, label = "calibration data")
+          [ lines.Line2D([0], [0], color = 'black', linestyle = "dotted", label = "original sim.")
+          , lines.Line2D([0], [0], color = 'black', linestyle = "solid", label = "transported sim.")
+          , lines.Line2D([0], [0], marker = 'o', color = 'black', linewidth = 0, label = "calibration data")
           ]
 
         fig.legend(loc=(0.20, 0.78), handles=handles, prop={'size': 14}, frameon=False)
 
         handles = \
-          [ plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'red', markeredgecolor = 'red', label = "$\\theta_0 = 0$")
-          , plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'blue', markeredgecolor = 'blue', label = "$\\theta_0 = +1$")
-          , plt.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'green', markeredgecolor = 'green', label = "$\\theta_0 = -1$")
+          [ lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'red', markeredgecolor = 'red', label = "$\\theta_0 = 0$")
+          , lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'blue', markeredgecolor = 'blue', label = "$\\theta_0 = +1$")
+          , lines.Line2D([0], [0], marker = 's', color = 'none', markerfacecolor = 'green', markeredgecolor = 'green', label = "$\\theta_0 = -1$")
           ]
 
         fig.legend(loc=(0.63, 0.77), handles=handles, prop={'size': 14}, frameon=False)
 
-      plt.xlim(-1, 1)
-      plt.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
-      plt.tick_params(axis='both', which='major', labelsize=14)
-      plt.xlabel("$x$, $x'$, $y$", fontsize=18)
-      plt.ylabel("binned probability density", fontsize=18)
-      plt.tight_layout()
+      ax.set_ylim(0, max(htarget)*1.5)
+      ax.set_xlim(-1, 1)
+      ax.set_xticks(ticks=[-1, -0.5, 0, 0.5, 1])
+      ax.tick_params(axis='both', which='major', labelsize=14)
+      ax.set_xlabel("$x$, $x'$, $y$", fontsize=18)
+      ax.set_ylabel("binned probability density", fontsize=18)
+      fig.tight_layout()
 
       return fig
-
