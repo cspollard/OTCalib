@@ -11,8 +11,8 @@
 , "epoch_size" : 64
 , "number_epochs" : 50000
 
-, "lr_f" : 3e-5
-, "lr_g" : 3e-5
+, "lr_f" : 1e-5
+, "lr_g" : 1e-5
 , "model" : {}
 , "g_per_f" : 10
 }

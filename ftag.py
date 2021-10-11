@@ -58,6 +58,7 @@ lr_g = config["lr_g"]
 g_per_f = config["g_per_f"]
 
 
+grad_clip = config["grad_clip"]
 
 from time import gmtime, strftime
 time_suffix = strftime("%Y_%m_%d_%H_%M_%S", gmtime())
@@ -132,10 +133,14 @@ for epoch in range(number_epochs):
         - f_func(thetas, grad_g)
 
       # need to maximise the lagrangian
-      loss_g = torch.mean(-lag_g) + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
+      loss_g = torch.mean(-lag_g) # + g_func.get_convexity_regularisation_term() # can use a regulariser to keep it close to convexity ...
       loss_g.backward()
+
+      if grad_clip > 0:
+        torch.nn.utils.clip_grad_norm_(g_func.parameters(), grad_clip)
+
       g_func_optim.step()
-      # g_func.enforce_convexity() # ... or enforce convexity explicitly
+      g_func.enforce_convexity() # ... or enforce convexity explicitly
 
 
     f_func_optim.zero_grad()
@@ -159,7 +164,12 @@ for epoch in range(number_epochs):
     lag_f = f_func(thetas, target) 
 
     lag_total = lag_g + lag_f
-    loss_total = torch.mean(lag_total) + f_func.get_convexity_regularisation_term() 
+    loss_total = torch.mean(lag_total) # + f_func.get_convexity_regularisation_term() 
     loss_total.backward()
+
+
+    if grad_clip > 0:
+      torch.nn.utils.clip_grad_norm_(f_func.parameters(), grad_clip)
+
     f_func_optim.step()
-    # f_func.enforce_convexity()
+    f_func.enforce_convexity()

@@ -59,3 +59,6 @@ def binned_kldiv(targ, pred):
   hpred = np.histogram(pred, bins=100, range=(-1, 1), density=True)[0]
   return np.sum(htarg * np.log(htarg / hpred))
 
+
+def sort(t):
+  return torch.sort(t, dim=0)[0]
