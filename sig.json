@@ -8,11 +8,12 @@
 , "f_nonconvex_shape" : [0, 0, 0, 0]
 , "g_nonconvex_shape" : [0, 0, 0, 0]
 , "batch_size" : 256
-, "epoch_size" : 64
+, "epoch_size" : 512
 , "number_epochs" : 50000
 
 , "lr_f" : 1e-4
 , "lr_g" : 1e-4
 , "model" : {}
 , "g_per_f" : 10
+, "grad_clip" : 100
 }

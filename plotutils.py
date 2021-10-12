@@ -46,7 +46,8 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
     fig = figure.Figure(figsize = (6, 6))
     ax = fig.add_subplot(111)
 
-    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "transport")
+    ax.plot(detach(xval), detach(yvalnom), color = "red", lw = 2, label = "derived transport")
+    ax.plot(detach(sort(signom)), detach(sort(of_length(alltarget, signom))), "--", color = "red", lw = 2, label = "true optimal transport")
 
     ax.set_xlim(-1, 0)
     ax.set_ylim(-0.5, 0.5)
@@ -54,6 +55,8 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
 
     ax.set_xlabel("$x$", fontsize=18)
     ax.set_ylabel("$x' = T(x)$", fontsize=18)
+
+    fig.legend(loc=(0.4, 0.2), prop={'size': 14}, frameon=False)
     fig.tight_layout()
 
     if outfolder is not None:
@@ -101,7 +104,7 @@ def plot_callback(f, g, prediction, target, num_thetas, num_samples, device, wri
 
     ax.set_xlim(-1, 1)
     ax.tick_params(axis='both', which='major', labelsize=14)
-    figure.xticks(ticks=[-1, -0.5, 0, 0.5, 1])
+    ax.set_xticks(ticks=[-1, -0.5, 0, 0.5, 1])
 
     ax.set_xlabel("$y$", fontsize=18)
     ax.set_ylabel("$f(y)$", fontsize=18)
